@@ -931,7 +931,23 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
     return (
       <div className="mt-2">
-        <Listbox value={source.files} onChange={() => {}} multiple>
+        <Listbox 
+          value={source.files.filter(f => f.selected)} 
+          onChange={(selectedFiles) => {
+            const updatedFiles = source.files.map(file => ({
+              ...file,
+              selected: selectedFiles.some(selected => selected.id === file.id)
+            }));
+            setSourceState(prev => ({
+              ...prev,
+              [sourceId]: {
+                ...prev[sourceId],
+                files: updatedFiles
+              }
+            }));
+          }} 
+          multiple
+        >
           <div className="relative mt-1">
             <Listbox.Button className="relative w-full cursor-default rounded-lg bg-white py-2 pl-3 pr-10 text-left border focus:outline-none focus-visible:border-[#4A154B] focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#4A154B] sm:text-sm">
               <span className="block truncate">
