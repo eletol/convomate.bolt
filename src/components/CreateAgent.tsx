@@ -254,18 +254,20 @@ const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string
           if (file.children) {
             return acc + calculateSelectedSize(file.children);
           }
-          return acc + file.size;
+          return acc + (file.size || 0);
         }
         return acc + (file.children ? calculateSelectedSize(file.children) : 0);
       }, 0);
     };
+
+    const newSelectedSize = calculateSelectedSize(newFiles);
 
     return {
       ...prev,
       [sourceId]: {
         ...source,
         files: newFiles,
-        selectedSize: calculateSelectedSize(newFiles),
+        selectedSize: newSelectedSize,
       },
     };
   });
