@@ -9,7 +9,6 @@ import { useAgents } from '../contexts/AgentsContext';
 import { useIntegrations } from '../contexts/IntegrationsContext';
 import { useKnowledgeSources } from '../contexts/KnowledgeSourcesContext';
 import { Agent, AgentType, KnowledgeSource, KnowledgeSourceFile } from '../types';
-import { formatBytes } from '../utils/format';
 import { Dialog } from '@headlessui/react';
 import { Listbox } from '@headlessui/react';
 
@@ -277,6 +276,14 @@ const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string
   });
 };
 
+function formatBytes(bytes: number | undefined): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
 function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentProps) {
   const [currentStep, setCurrentStep] = React.useState(1);
   const [formData, setFormData] = React.useState({
@@ -513,23 +520,14 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
             if (filesResponse.ok) {
               const filesData = await filesResponse.json();
-              
-              const calculateTotalSize = (files: KnowledgeSourceFile[]): number => {
-                return files.reduce((acc, file) => {
-                  if (file.children) {
-                    return acc + calculateTotalSize(file.children);
-                  }
-                  return acc + (file.size || 0);
-                }, 0);
-              };
-
-              const totalSize = calculateTotalSize(filesData.files || []);
+              const files = filesData.files || [];
+              const totalSize = calculateTotalSize(files);
               
               setSourceState(prev => ({
                 ...prev,
                 [sourceId]: {
                   ...prev[sourceId],
-                  files: filesData.files || [],
+                  files: files,
                   totalSize: totalSize,
                   selectedSize: 0
                 }
