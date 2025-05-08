@@ -1126,15 +1126,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     <div className="space-y-6 max-w-3xl">
       <div className="grid grid-cols-1 gap-4">
         {knowledgeSources.map((source) => (
-          <button
+          <div
             key={source.id}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (!sourceState[source.id].isAuthenticated) {
-                handleSourceAuth(source.id);
-              }
-            }}
             className={`w-full p-6 text-left rounded-lg border transition-colors ${
               sourceState[source.id].isAuthenticated
                 ? 'border-[#4A154B] bg-[#4A154B]/5'
@@ -1142,20 +1135,20 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
             }`}
           >
             <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-[#4A154B]/10 rounded-lg">
-                    <source.icon className="w-6 h-6 text-[#4A154B]" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">{source.name}</h3>
-                    <p className="text-sm text-gray-500 mt-1">{source.description}</p>
-                    {sourceState[source.id].isAuthenticated && connectedAccounts[source.id] && (
-                      <p className="text-sm text-[#4A154B] mt-2">
-                        Connected as {connectedAccounts[source.id]}
-                      </p>
-                    )}
-                  </div>
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-[#4A154B]/10 rounded-lg">
+                  <source.icon className="w-6 h-6 text-[#4A154B]" />
                 </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">{source.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{source.description}</p>
+                  {sourceState[source.id].isAuthenticated && connectedAccounts[source.id] && (
+                    <p className="text-sm text-[#4A154B] mt-2">
+                      Connected as {connectedAccounts[source.id]}
+                    </p>
+                  )}
+                </div>
+              </div>
               
               {sourceState[source.id].isAuthenticated ? (
                 <div className="flex items-center space-x-2">
@@ -1187,7 +1180,18 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                   <span className="text-sm text-gray-500">Connecting...</span>
                 </div>
               ) : (
-                <span className="text-sm text-[#4A154B]">Click to connect</span>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!sourceState[source.id].isAuthenticated) {
+                      handleSourceAuth(source.id);
+                    }
+                  }}
+                  className="text-sm text-[#4A154B]"
+                >
+                  Click to connect
+                </button>
               )}
             </div>
 
@@ -1207,9 +1211,39 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
                 <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto">
                   <div className="p-4">
-                    {filterFiles(sourceState[source.id].files, searchQuery).map(file => 
-                      renderFile(file, source.id)
-                    )}
+                    <Listbox 
+                      value={sourceState[source.id].files.filter(f => f.selected)} 
+                      onChange={(selectedFiles) => {
+                        const updatedFiles = sourceState[source.id].files.map(file => ({
+                          ...file,
+                          selected: selectedFiles.some(selected => selected.id === file.id)
+                        }));
+                        setSourceState(prev => ({
+                          ...prev,
+                          [source.id]: {
+                            ...prev[source.id],
+                            files: updatedFiles
+                          }
+                        }));
+                      }} 
+                      multiple
+                    >
+                      <div className="relative mt-1">
+                        <Listbox.Button className="relative w-full cursor-default rounded-lg bg-white py-2 pl-3 pr-10 text-left border focus:outline-none focus-visible:border-[#4A154B] focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#4A154B] sm:text-sm">
+                          <span className="block truncate">
+                            {sourceState[source.id].files.filter(f => f.selected).length} files selected
+                          </span>
+                          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                            <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                          </span>
+                        </Listbox.Button>
+                        <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                          {filterFiles(sourceState[source.id].files, searchQuery).map(file => 
+                            renderFile(file, source.id)
+                          )}
+                        </Listbox.Options>
+                      </div>
+                    </Listbox>
                   </div>
                 </div>
 
@@ -1223,7 +1257,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                 </div>
               </div>
             )}
-          </button>
+          </div>
         ))}
       </div>
 
