@@ -510,12 +510,24 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
             if (filesResponse.ok) {
               const filesData = await filesResponse.json();
               
+              const calculateTotalSize = (files: KnowledgeSourceFile[]): number => {
+                return files.reduce((acc, file) => {
+                  if (file.children) {
+                    return acc + calculateTotalSize(file.children);
+                  }
+                  return acc + (file.size || 0);
+                }, 0);
+              };
+
+              const totalSize = calculateTotalSize(filesData.files || []);
+              
               setSourceState(prev => ({
                 ...prev,
                 [sourceId]: {
                   ...prev[sourceId],
                   files: filesData.files || [],
-                  totalSize: filesData.totalSize || 0,
+                  totalSize: totalSize,
+                  selectedSize: 0
                 }
               }));
 
@@ -1264,10 +1276,10 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">
-                    Selected: {formatBytes(sourceState[source.id].selectedSize)}
+                    Selected: {formatBytes(sourceState[source.id].selectedSize || 0)}
                   </span>
                   <span className="text-gray-500">
-                    Total available: {formatBytes(sourceState[source.id].totalSize)}
+                    Total available: {formatBytes(sourceState[source.id].totalSize || 0)}
                   </span>
                 </div>
               </div>
@@ -1552,19 +1564,13 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (onComplete) onComplete();
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    {isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent'}
-                  </>
-                )}
+                {isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent'}
               </button>
             </div>
           )}
