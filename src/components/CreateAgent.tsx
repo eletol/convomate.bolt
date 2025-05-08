@@ -228,6 +228,58 @@ interface SlackChannel {
   name: string;
 }
 
+const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string, SourceAuthState>, setSourceState: React.Dispatch<React.SetStateAction<Record<string, SourceAuthState>>>) => {
+  setSourceState(prev => {
+    const source = prev[sourceId];
+    
+    const updateFileAndChildren = (files: KnowledgeSourceFile[]): KnowledgeSourceFile[] => {
+      return files.map(file => {
+        if (file.id === fileId) {
+          const newSelected = !file.selected;
+          return {
+            ...file,
+            selected: newSelected,
+            children: file.children?.map(child => ({
+              ...child,
+              selected: newSelected,
+            })),
+          };
+        } else if (file.children) {
+          const updatedChildren = updateFileAndChildren(file.children);
+          return {
+            ...file,
+            children: updatedChildren,
+            selected: updatedChildren.every(child => child.selected),
+          };
+        }
+        return file;
+      });
+    };
+
+    const newFiles = updateFileAndChildren(source.files);
+    const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
+      return files.reduce((acc, file) => {
+        if (file.selected) {
+          if (file.children) {
+            return acc + calculateSelectedSize(file.children);
+          }
+          return acc + file.size;
+        }
+        return acc + (file.children ? calculateSelectedSize(file.children) : 0);
+      }, 0);
+    };
+
+    return {
+      ...prev,
+      [sourceId]: {
+        ...source,
+        files: newFiles,
+        selectedSize: calculateSelectedSize(newFiles),
+      },
+    };
+  });
+};
+
 function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentProps) {
   const [currentStep, setCurrentStep] = React.useState(1);
   const [formData, setFormData] = React.useState({
@@ -267,7 +319,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         throw new Error('Agent ID is required to connect data source');
       }
 
-      // Update connecting state
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
@@ -276,7 +327,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         }
       }));
 
-      // Get the OAuth URL for the data source
       const url = integrationService.getIntegrationUrl(sourceId, agentId + ":" + auth.currentUser?.uid);
       window.location.href = url;
     } catch (error) {
@@ -292,12 +342,10 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     }
   };
 
-  // Check for OAuth callback and handle redirect
   React.useEffect(() => {
     const pathParts = window.location.pathname.split('/');
     const agentIdFromPath = pathParts[pathParts.indexOf('agents') + 1];
 
-    // Define all possible OAuth callback paths with correct integration IDs
     const oauthCallbacks = {
       'slack': 'slack-connected',
       'googleDrive': 'gdrive-connected',
@@ -306,7 +354,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       'jira': 'confluence-connected'
     };
 
-    // Check for any OAuth callback
     for (const [sourceId, path] of Object.entries(oauthCallbacks)) {
       if (pathParts.includes(path) && agentIdFromPath) {
         setAgentId(agentIdFromPath);
@@ -315,7 +362,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           try {
             const token = await auth.currentUser?.getIdToken();
             
-            // Fetch agent details
             const agentResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentIdFromPath}`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -331,7 +377,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
             setAgentDetails(agentData);
             
             if (sourceId === 'slack') {
-              // Handle Slack specific logic
               setFormData(prev => ({
                 ...prev,
                 slackWorkspaceId: agentData.slack_integration?.team_id || '',
@@ -340,14 +385,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
               await fetchSlackChannels(agentIdFromPath);
               setCurrentStep(3);
             } else {
-              // For data sources (step 4)
               setCurrentStep(4);
 
-              // Check if the integration exists in agent data
               const integrationKey = sourceId === 'googleDrive' ? 'google_drive_integration' : `${sourceId}_integration`;
               const integrationExists = agentData[integrationKey] !== undefined;
 
-              // Set the source as connected if integration exists
               setSourceState(prev => ({
                 ...prev,
                 [sourceId]: {
@@ -357,7 +399,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                 }
               }));
 
-              // If integration exists, fetch source files
               if (integrationExists) {
                 const filesResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentIdFromPath}/${sourceId}/files`, {
                   headers: {
@@ -372,7 +413,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
                 const filesData = await filesResponse.json();
                 
-                // Update source state with files
                 setSourceState(prev => ({
                   ...prev,
                   [sourceId]: {
@@ -383,7 +423,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                   }
                 }));
 
-                // Set connected account info if available
                 if (filesData.account_info) {
                   setConnectedAccounts(prev => ({
                     ...prev,
@@ -404,7 +443,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     }
   }, []);
 
-  // Add a new effect to check initial integration state when agentId changes
   React.useEffect(() => {
     const checkInitialIntegrationState = async () => {
       if (!agentId) return;
@@ -425,11 +463,9 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         const agentData = await response.json();
         setAgentDetails(agentData);
 
-        // Update connection status for all sources based on agent data
         const updatedSourceState = { ...sourceState };
         const updatedConnectedAccounts = { ...connectedAccounts };
 
-        // Check Slack integration
         if (agentData.slack_integration) {
           setIsSlackConnected(true);
           setFormData(prev => ({
@@ -439,7 +475,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           await fetchSlackChannels(agentId);
         }
 
-        // Check other data source integrations
         knowledgeSources.forEach(source => {
           const integrationKey = source.id === 'googleDrive' ? 'google_drive_integration' : `${source.id}_integration`;
           if (agentData[integrationKey]) {
@@ -449,7 +484,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
               isConnecting: false,
             };
 
-            // Set connected account info if available
             if (agentData[integrationKey].account_info) {
               updatedConnectedAccounts[source.id] = agentData[integrationKey].account_info;
             }
@@ -459,7 +493,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         setSourceState(updatedSourceState);
         setConnectedAccounts(updatedConnectedAccounts);
 
-        // If we're on step 4, fetch files for connected sources
         if (currentStep === 4) {
           await fetchFilesForConnectedSources(agentId, updatedSourceState);
         }
@@ -528,7 +561,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       const data = await response.json();
       setAvailableChannels(data.channels || []);
       
-      // If agent has existing channels, set them in formData
       if (agentDetails?.slack_channels?.length > 0) {
         setFormData(prev => ({
           ...prev,
@@ -565,7 +597,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         slackWorkspaceId: data.workspace_id,
       }));
       
-      // Fetch channels after successful OAuth
       if (data.workspace_id) {
         await fetchSlackChannels(data.workspace_id);
       }
@@ -586,7 +617,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
         throw new Error('Agent ID is required to connect to Slack');
       }
       
-      // Use agent_id as the state parameter for security
       const url = integrationService.getIntegrationUrl('slack', agentId+":"+auth.currentUser?.uid);
       window.location.href = url;
     } catch (error) {
@@ -695,7 +725,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       try {
         await createDraftAgent();
       } catch (error) {
-        return; // Don't proceed to next step if agent creation fails
+        return;
       }
     }
 
@@ -723,7 +753,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       } catch (error) {
         console.error('Error updating Slack channels:', error);
         setError('Failed to update Slack channels. Please try again.');
-        return; // Don't proceed to next step if channel update fails
+        return;
       }
     }
 
@@ -738,7 +768,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     try {
       const token = await auth.currentUser?.getIdToken();
       
-      // Prepare selected files for each source
       const knowledgeSourcesPayload = Object.entries(sourceState)
         .filter(([_, state]) => state.isAuthenticated && state.selectedSize > 0)
         .map(([sourceId, state]) => ({
@@ -783,7 +812,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     }
   };
 
-  // Helper function to get all selected files (including nested children)
   const getSelectedFiles = (files: KnowledgeSourceFile[]): KnowledgeSourceFile[] => {
     return files.reduce<KnowledgeSourceFile[]>((acc, file) => {
       if (file.selected && file.type !== 'folder') {
@@ -804,83 +832,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
     }
   };
 
-  const toggleFile = (sourceId: string, fileId: string) => {
-    console.log('Toggling file:', { sourceId, fileId });
-    
-    setSourceState(prev => {
-      const source = prev[sourceId];
-      
-      // Create a deep copy of the files array
-      const filesCopy = JSON.parse(JSON.stringify(source.files));
-      
-      const findAndToggleFile = (files: KnowledgeSourceFile[]): KnowledgeSourceFile[] => {
-        return files.map(file => {
-          // If this is the file we're toggling
-          if (file.id === fileId) {
-            console.log('Found matching file:', { id: file.id, name: file.name });
-            const newSelected = !file.selected;
-            
-            // If it's a folder, update all children
-            if (file.children) {
-              file.children = file.children.map(child => ({
-                ...child,
-                selected: newSelected
-              }));
-            }
-            
-            // Update the file's selection state
-            file.selected = newSelected;
-            return file;
-          }
-          
-          // If this isn't the file we're toggling but has children
-          if (file.children) {
-            file.children = findAndToggleFile(file.children);
-            // Update parent selection based on children
-            file.selected = file.children.every(child => child.selected);
-          }
-          
-          return file;
-        });
-      };
-
-      // Update files with new selection
-      const updatedFiles = findAndToggleFile(filesCopy);
-      
-      // Calculate new selected size
-      const calculateSize = (files: KnowledgeSourceFile[]): number => {
-        return files.reduce((total, file) => {
-          let size = 0;
-          if (file.selected && typeof file.size === 'number') {
-            size += file.size;
-          }
-          if (file.children) {
-            size += calculateSize(file.children);
-          }
-          return total + size;
-        }, 0);
-      };
-
-      const newSelectedSize = calculateSize(updatedFiles);
-
-      // Create a new state object
-      const newState = {
-        ...prev,
-        [sourceId]: {
-          ...source,
-          files: updatedFiles,
-          selectedSize: newSelectedSize
-        }
-      };
-
-      // Verify the state update
-      const updatedFile = newState[sourceId].files.find(f => f.id === fileId);
-      console.log('Updated file state:', updatedFile);
-
-      return newState;
-    });
-  };
-  
   const toggleExpand = (sourceId: string, fileId: string) => {
     setSourceState(prev => ({
       ...prev,
@@ -934,46 +885,35 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       .filter(file => !file.hidden);
   };
 
-  const stepTitles = [
-    'Basic Information',
-    'Select Agent Type',
-    'Connect to Slack',
-    'Knowledge Sources',
-    'Test Your Agent',
-  ];
-
-  const renderFile = (file: KnowledgeSourceFile, sourceId: string, level = 0) => {
-    return (
-      <div key={file.id} className="space-y-2">
-        <div 
-          className={`flex items-center space-x-2 py-2 px-3 rounded-lg hover:bg-gray-50 ${
-            level > 0 ? 'ml-6' : ''
-          }`}
-        >
-          {file.children && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleExpand(sourceId, file.id);
-              }}
-              className="p-1 hover:bg-gray-100 rounded"
-            >
-              {file.expanded ? (
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-500" />
-              )}
-            </button>
-          )}
+  const renderFile = (file: KnowledgeSourceFile, sourceId: string, level = 0) => (
+    <div key={file.id} className="space-y-2">
+      <div 
+        className={`flex items-center space-x-2 py-2 px-3 rounded-lg hover:bg-gray-50 ${
+          level > 0 ? 'ml-6' : ''
+        }`}
+      >
+        {file.children && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpand(sourceId, file.id);
+            }}
+            className="p-1 hover:bg-gray-100 rounded"
+          >
+            {file.expanded ? (
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-500" />
+            )}
+          </button>
+        )}
+        <label className="flex items-center space-x-2 flex-1 cursor-pointer">
           <input
             type="checkbox"
-            checked={file.selected || false}
+            checked={file.selected}
             onChange={(e) => {
-              e.preventDefault();
               e.stopPropagation();
-              console.log('Checkbox clicked:', { id: file.id, name: file.name });
-              toggleFile(sourceId, file.id);
+              toggleFile(sourceId, file.id, sourceState, setSourceState);
             }}
             className="rounded border-gray-300 text-[#4A154B] focus:ring-[#4A154B]"
           />
@@ -981,15 +921,23 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           {file.size > 0 && (
             <span className="text-xs text-gray-500">{formatBytes(file.size)}</span>
           )}
-        </div>
-        {file.children && file.expanded && (
-          <div className="ml-4">
-            {file.children.map(child => renderFile(child, sourceId, level + 1))}
-          </div>
-        )}
+        </label>
       </div>
-    );
-  };
+      {file.children && file.expanded && (
+        <div className="ml-4">
+          {file.children.map(child => renderFile(child, sourceId, level + 1))}
+        </div>
+      )}
+    </div>
+  );
+
+  const stepTitles = [
+    'Basic Information',
+    'Select Agent Type',
+    'Connect to Slack',
+    'Knowledge Sources',
+    'Test Your Agent',
+  ];
 
   const renderBasicInfo = () => (
     <div className="w-full max-w-md mx-auto space-y-6">
@@ -1551,4 +1499,3 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 }
 
 export default CreateAgent;
-              
