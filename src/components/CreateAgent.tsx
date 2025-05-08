@@ -248,15 +248,19 @@ const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string
     };
 
     const newFiles = updateFileAndChildren(source.files);
+    
     const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
       return files.reduce((acc, file) => {
         if (file.selected) {
           if (file.children) {
             return acc + calculateSelectedSize(file.children);
           }
-          return acc + (file.size || 0);
+          return acc + (Number(file.size) || 0);
         }
-        return acc + (file.children ? calculateSelectedSize(file.children) : 0);
+        if (file.children) {
+          return acc + calculateSelectedSize(file.children);
+        }
+        return acc;
       }, 0);
     };
 
