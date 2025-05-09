@@ -221,6 +221,7 @@ interface SlackChannel {
 const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string, SourceAuthState>, setSourceState: React.Dispatch<React.SetStateAction<Record<string, SourceAuthState>>>) => {
   setSourceState(prev => {
     const source = prev[sourceId];
+    if (!source) return prev;
     
     const updateFileAndChildren = (files: KnowledgeSourceFile[]): KnowledgeSourceFile[] => {
       return files.map(file => {
@@ -246,7 +247,7 @@ const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string
       });
     };
 
-    const newFiles = updateFileAndChildren(source.files);
+    const newFiles = updateFileAndChildren([...source.files]);
     
     const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
       return files.reduce((acc, file) => {
@@ -505,6 +506,16 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       }
     };
 
+    const calculateTotalSize = (files: KnowledgeSourceFile[]): number => {
+      return files.reduce((acc, file) => {
+        const fileSize = Number(file.size) || 0;
+        if (file.children) {
+          return acc + fileSize + calculateTotalSize(file.children);
+        }
+        return acc + fileSize;
+      }, 0);
+    };
+
     const fetchFilesForConnectedSources = async (agentId: string, sourceState: Record<string, SourceAuthState>) => {
       try {
         const token = await auth.currentUser?.getIdToken();
@@ -521,13 +532,27 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
             if (filesResponse.ok) {
               const filesData = await filesResponse.json();
               const files = filesData.files || [];
-              const totalSize = calculateTotalSize(files);
+              
+              // Ensure all files have the required properties
+              const processedFiles = files.map((file: KnowledgeSourceFile) => ({
+                ...file,
+                selected: file.selected || false,
+                expanded: file.expanded || false,
+                size: Number(file.size) || 0,
+                children: file.children ? file.children.map((child: KnowledgeSourceFile) => ({
+                  ...child,
+                  selected: child.selected || false,
+                  size: Number(child.size) || 0,
+                })) : undefined,
+              }));
+
+              const totalSize = calculateTotalSize(processedFiles);
               
               setSourceState(prev => ({
                 ...prev,
                 [sourceId]: {
                   ...prev[sourceId],
-                  files: files,
+                  files: processedFiles,
                   totalSize: totalSize,
                   selectedSize: 0
                 }
