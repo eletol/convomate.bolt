@@ -1309,6 +1309,21 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                     Total available: {calculateFileCount(sourceState[source.id].files)} Files
                   </span>
                 </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Save the selected files for this source
+                      const selectedFiles = getSelectedFiles(sourceState[source.id].files);
+                      console.log(`Saving ${selectedFiles.length} files for ${source.name}`);
+                      // TODO: Implement actual save functionality
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] transition-colors"
+                  >
+                    Save Selection
+                  </button>
+                </div>
               </div>
             )}
           </div>
