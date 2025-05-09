@@ -1575,7 +1575,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(selectedFiles),
+        body: JSON.stringify({ files: selectedFiles }),
       });
 
       if (!response.ok) {
