@@ -89,7 +89,8 @@ const initialSourceState: SourceAuthState = {
   files: [],
   totalSize: 0,
   selectedSize: 0,
-  selectedFileCount: 0
+  selectedFileCount: 0,
+  isLoading: false
 };
 
 const mockFiles = {
@@ -1817,7 +1818,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
-          isLoading: true
+          isLoading: true,
+          files: [],
+          totalSize: 0,
+          selectedSize: 0,
+          selectedFileCount: 0
         }
       }));
 
@@ -1850,7 +1855,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       // Process files and mark previously selected ones
       const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => {
         const isSelected = selectedFilesMap.has(file.id);
-        const selectedFile = selectedFilesMap.get(file.id);
         
         return {
           ...file,
@@ -1859,7 +1863,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           size: Number(file.size) || 0,
           children: file.children ? file.children.map((child: KnowledgeSourceFile) => {
             const isChildSelected = selectedFilesMap.has(child.id);
-            const selectedChild = selectedFilesMap.get(child.id);
             
             return {
               ...child,
@@ -1870,45 +1873,19 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         };
       });
 
-      // Calculate selected file count and size
-      const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
-        return files.reduce((acc, file) => {
-          if (file.selected && file.type !== 'folder') {
-            acc++;
-          }
-          if (file.children) {
-            acc += calculateSelectedCount(file.children);
-          }
-          return acc;
-        }, 0);
-      };
-
-      const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
-        return files.reduce((acc, file) => {
-          if (file.selected) {
-            if (file.children) {
-              return acc + calculateSelectedSize(file.children);
-            }
-            return acc + (Number(file.size) || 0);
-          }
-          if (file.children) {
-            return acc + calculateSelectedSize(file.children);
-          }
-          return acc;
-        }, 0);
-      };
-
-      const selectedCount = calculateSelectedCount(processedFiles);
-      const selectedSize = calculateSelectedSize(processedFiles);
+      // Use the API response data for counts and sizes
+      const totalSize = data.total_size || 0;
+      const selectedSize = data.selected_size || 0;
+      const selectedFileCount = data.selected_file_count || 0;
       
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
           files: processedFiles,
-          totalSize: data.total_size || 0,
+          totalSize: totalSize,
           selectedSize: selectedSize,
-          selectedFileCount: selectedCount,
+          selectedFileCount: selectedFileCount,
           isLoading: false
         }
       }));
