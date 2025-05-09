@@ -1306,7 +1306,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                     Selected: {formatBytes(sourceState[source.id].selectedSize || 0)}
                   </span>
                   <span className="text-gray-500">
-                    Total available: {formatBytes(sourceState[source.id].totalSize || 0)}
+                    Total available: {calculateFileCount(sourceState[source.id].files)} Files
                   </span>
                 </div>
               </div>
@@ -1509,6 +1509,15 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       default:
         return null;
     }
+  };
+
+  const calculateFileCount = (files: KnowledgeSourceFile[]): number => {
+    return files.reduce((acc, file) => {
+      if (file.children) {
+        return acc + calculateFileCount(file.children);
+      }
+      return acc + 1;
+    }, 0);
   };
 
   return (
