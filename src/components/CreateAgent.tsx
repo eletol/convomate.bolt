@@ -1846,7 +1846,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       // Process files and mark previously selected ones
       const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => {
         const isSelected = selectedFilesMap.has(file.id);
-        
         return {
           ...file,
           selected: isSelected,
@@ -1854,7 +1853,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           size: Number(file.size) || 0,
           children: file.children ? file.children.map((child: KnowledgeSourceFile) => {
             const isChildSelected = selectedFilesMap.has(child.id);
-            
             return {
               ...child,
               selected: isChildSelected,
@@ -1864,10 +1862,32 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         };
       });
 
-      // Use the API response data for counts and sizes
+      // Recalculate selected count and size from processedFiles
+      const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
+        return files.reduce((acc, file) => {
+          if (file.selected && file.type !== 'folder') {
+            acc++;
+          }
+          if (file.children) {
+            acc += calculateSelectedCount(file.children);
+          }
+          return acc;
+        }, 0);
+      };
+      const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
+        return files.reduce((acc, file) => {
+          if (file.selected && file.type !== 'folder') {
+            acc += Number(file.size) || 0;
+          }
+          if (file.children) {
+            acc += calculateSelectedSize(file.children);
+          }
+          return acc;
+        }, 0);
+      };
+      const selectedFileCount = calculateSelectedCount(processedFiles);
+      const selectedSize = calculateSelectedSize(processedFiles);
       const totalSize = data.total_size || 0;
-      const selectedSize = data.selected_size || 0;
-      const selectedFileCount = data.selected_file_count || 0;
       
       setSourceState(prev => ({
         ...prev,
