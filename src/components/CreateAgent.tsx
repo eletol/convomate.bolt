@@ -1862,13 +1862,13 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         };
       });
 
-      // Recalculate selected count and size from processedFiles
+      // Always calculate selected count and size recursively
       const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
         return files.reduce((acc, file) => {
           if (file.selected && file.type !== 'folder') {
             acc++;
           }
-          if (file.children) {
+          if (file.children && file.children.length > 0) {
             acc += calculateSelectedCount(file.children);
           }
           return acc;
@@ -1879,7 +1879,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           if (file.selected && file.type !== 'folder') {
             acc += Number(file.size) || 0;
           }
-          if (file.children) {
+          if (file.children && file.children.length > 0) {
             acc += calculateSelectedSize(file.children);
           }
           return acc;
