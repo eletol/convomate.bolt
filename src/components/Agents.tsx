@@ -292,12 +292,12 @@ function Agents(): React.ReactElement {
     } finally {
       setIsLoading(false);
     }
-  }, [lastFetchTime]);
+  }, []);
 
   // Initial fetch only
   React.useEffect(() => {
     fetchAgents(true);
-  }, [fetchAgents]);
+  }, []);
 
   // Optimize agent status update
   const updateAgentStatus = React.useCallback(async (agentId: string, newStatus: string) => {
