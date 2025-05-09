@@ -1750,6 +1750,10 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   const fetchFilesForSource = async (sourceId: string) => {
     try {
+      if (!agentId) {
+        throw new Error('Agent ID is required to fetch files');
+      }
+
       const token = await auth.currentUser?.getIdToken();
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}/${sourceId}/files`, {
         headers: {
@@ -1759,6 +1763,9 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`No files found for ${sourceId}`);
+        }
         throw new Error('Failed to fetch files');
       }
 
@@ -1781,8 +1788,28 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         })) : undefined,
       }));
 
-      const totalSize = calculateTotalSize(processedFiles);
-      const selectedSize = calculateSelectedSize(processedFiles);
+      const totalSize = processedFiles.reduce((acc, file) => {
+        const fileSize = Number(file.size) || 0;
+        if (file.children) {
+          return acc + fileSize + file.children.reduce((childAcc, child) => childAcc + (Number(child.size) || 0), 0);
+        }
+        return acc + fileSize;
+      }, 0);
+
+      const selectedSize = processedFiles.reduce((acc, file) => {
+        if (file.selected) {
+          acc += Number(file.size) || 0;
+        }
+        if (file.children) {
+          acc += file.children.reduce((childAcc, child) => {
+            if (child.selected) {
+              return childAcc + (Number(child.size) || 0);
+            }
+            return childAcc;
+          }, 0);
+        }
+        return acc;
+      }, 0);
       
       setSourceState(prev => ({
         ...prev,
