@@ -319,14 +319,22 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const [agentDetails, setAgentDetails] = React.useState<any>(null);
   const [isSaving, setIsSaving] = React.useState<Record<string, boolean>>({});
   const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = React.useState(editMode);
 
   // Load agent data when in edit mode
   React.useEffect(() => {
     const loadAgentData = async () => {
-      if (!editMode || !initialAgentId) return;
+      if (!editMode || !initialAgentId) {
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('Loading agent data for:', initialAgentId);
+      setIsLoading(true);
 
       try {
         const token = await auth.currentUser?.getIdToken();
+        console.log('Fetching agent details...');
         const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${initialAgentId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -339,6 +347,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         }
 
         const agentData = await response.json();
+        console.log('Agent data loaded:', agentData);
         setAgentDetails(agentData);
         setAgentId(initialAgentId);
 
@@ -398,6 +407,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       } catch (error) {
         console.error('Error loading agent data:', error);
         setError('Failed to load agent data. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -1766,96 +1777,105 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center relative">
-      {isOnboarding && (
-        <button 
-          onClick={() => {
-            if (onComplete) onComplete();
-          }}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-500 transition-colors"
-          aria-label="Skip onboarding"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      )}
-
-      <div className="max-w-4xl w-full mx-auto p-8 space-y-8">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-900">
-            {editMode ? "Edit Agent" : (isOnboarding ? "Welcome! Let's Create Your First Agent" : "Create New Agent")}
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">Step {currentStep} of 5: {stepTitles[currentStep - 1]}</p>
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4A154B]" />
+          <p className="text-gray-600">Loading agent data...</p>
         </div>
+      ) : (
+        <>
+          {isOnboarding && (
+            <button 
+              onClick={() => {
+                if (onComplete) onComplete();
+              }}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-500 transition-colors"
+              aria-label="Skip onboarding"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-            <p className="text-red-600">{error}</p>
-          </div>
-        )}
+          <div className="max-w-4xl w-full mx-auto p-8 space-y-8">
+            <div className="text-center">
+              <h2 className="text-2xl font-semibold text-gray-900">
+                {editMode ? "Edit Agent" : (isOnboarding ? "Welcome! Let's Create Your First Agent" : "Create New Agent")}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Step {currentStep} of 5: {stepTitles[currentStep - 1]}</p>
+            </div>
 
-        <div className="flex items-center justify-center space-x-2 max-w-md mx-auto">
-          {[1, 2, 3, 4, 5].map((step) => (
-            <React.Fragment key={step}>
-              <div
-                className={`w-full h-2 rounded-full transition-colors ${
-                  step <= currentStep ? 'bg-[#4A154B]' : 'bg-gray-200'
-                }`}
-              />
-            </React.Fragment>
-          ))}
-        </div>
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                <p className="text-red-600">{error}</p>
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div>{renderStep()}</div>
+            <div className="flex items-center justify-center space-x-2 max-w-md mx-auto">
+              {[1, 2, 3, 4, 5].map((step) => (
+                <React.Fragment key={step}>
+                  <div
+                    className={`w-full h-2 rounded-full transition-colors ${
+                      step <= currentStep ? 'bg-[#4A154B]' : 'bg-gray-200'
+                    }`}
+                  />
+                </React.Fragment>
+              ))}
+            </div>
 
-          {currentStep !== 4 && currentStep !== 5 && (
-            <div className="flex justify-end pt-6">
-              {(currentStep > 1 || !isOnboarding) && (
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  {currentStep === 1 && !isOnboarding ? 'Cancel' : 'Back'}
-                </button>
+            <form onSubmit={handleSubmit} className="space-y-8">
+              <div>{renderStep()}</div>
+
+              {currentStep !== 4 && currentStep !== 5 && (
+                <div className="flex justify-end pt-6">
+                  {(currentStep > 1 || !isOnboarding) && (
+                    <button
+                      type="button"
+                      onClick={handleBack}
+                      className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      {currentStep === 1 && !isOnboarding ? 'Cancel' : 'Back'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={
+                      (currentStep === 1 && !formData.name) ||
+                      (currentStep === 2 && !formData.type) ||
+                      (currentStep === 3 && (!isSlackConnected || formData.slackChannels.length === 0))
+                    }
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Continue
+                  </button>
+                </div>
               )}
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={
-                  (currentStep === 1 && !formData.name) ||
-                  (currentStep === 2 && !formData.type) ||
-                  (currentStep === 3 && (!isSlackConnected || formData.slackChannels.length === 0))
-                }
-                className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Continue
-              </button>
-            </div>
-          )}
 
-          {currentStep === 5 && (
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onComplete) onComplete();
-                }}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
-              >
-                {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
+              {currentStep === 5 && (
+                <div className="flex justify-between">
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (onComplete) onComplete();
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
+                  >
+                    {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
+                  </button>
+                </div>
+              )}
+            </form>
+          </div>
+        </>
+      )}
     </div>
   );
 }
