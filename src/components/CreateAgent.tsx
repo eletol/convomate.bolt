@@ -204,6 +204,8 @@ interface CreateAgentProps {
   isOnboarding?: boolean;
   onComplete?: () => void;
   onBack?: () => void;
+  editMode?: boolean;
+  agentId?: string;
 }
 
 interface Message {
@@ -285,7 +287,7 @@ function formatBytes(bytes: number | undefined): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentProps) {
+function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = false, agentId: initialAgentId }: CreateAgentProps) {
   const [currentStep, setCurrentStep] = React.useState(1);
   const [formData, setFormData] = React.useState({
     name: '',
@@ -312,11 +314,95 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
   const [connectedAccounts, setConnectedAccounts] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const chatContainerRef = React.useRef<HTMLDivElement>(null);
-  const [agentId, setAgentId] = React.useState<string | null>(null);
+  const [agentId, setAgentId] = React.useState<string | null>(initialAgentId || null);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [agentDetails, setAgentDetails] = React.useState<any>(null);
   const [isSaving, setIsSaving] = React.useState<Record<string, boolean>>({});
   const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
+
+  // Load agent data when in edit mode
+  React.useEffect(() => {
+    const loadAgentData = async () => {
+      if (!editMode || !initialAgentId) return;
+
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${initialAgentId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch agent details');
+        }
+
+        const agentData = await response.json();
+        setAgentDetails(agentData);
+        setAgentId(initialAgentId);
+
+        // Set basic information
+        setFormData(prev => ({
+          ...prev,
+          name: agentData.name || '',
+          type: agentData.type || '',
+        }));
+
+        // Handle Slack integration
+        if (agentData.slack_integration) {
+          setIsSlackConnected(true);
+          setFormData(prev => ({
+            ...prev,
+            slackWorkspaceId: agentData.slack_integration.team_id || '',
+          }));
+          await fetchSlackChannels(initialAgentId);
+          
+          // Set selected channels
+          if (agentData.slack_channels?.length > 0) {
+            setFormData(prev => ({
+              ...prev,
+              slackChannels: agentData.slack_channels.map((channel: any) => channel.id),
+            }));
+          }
+        }
+
+        // Handle knowledge sources
+        const updatedSourceState = { ...sourceState };
+        const updatedConnectedAccounts = { ...connectedAccounts };
+
+        knowledgeSources.forEach(source => {
+          const integrationKey = source.id === 'googleDrive' ? 'google_drive_integration' : `${source.id}_integration`;
+          if (agentData[integrationKey]) {
+            updatedSourceState[source.id] = {
+              ...updatedSourceState[source.id],
+              isAuthenticated: true,
+              isConnecting: false,
+            };
+
+            if (agentData[integrationKey].account_info) {
+              updatedConnectedAccounts[source.id] = agentData[integrationKey].account_info;
+            }
+          }
+        });
+
+        setSourceState(updatedSourceState);
+        setConnectedAccounts(updatedConnectedAccounts);
+
+        // Load files for each connected source
+        for (const [sourceId, state] of Object.entries(updatedSourceState)) {
+          if (state.isAuthenticated) {
+            await fetchFilesForSource(sourceId);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading agent data:', error);
+        setError('Failed to load agent data. Please try again.');
+      }
+    };
+
+    loadAgentData();
+  }, [editMode, initialAgentId]);
 
   const handleSourceAuth = async (sourceId: string) => {
     if (sourceState[sourceId].isAuthenticated) return;
@@ -813,34 +899,42 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           })),
         }));
 
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
-        method: 'PUT',
+      const payload = {
+        name: formData.name,
+        type: formData.type,
+        status: 'active',
+        configuration: {
+          channels: formData.slackChannels,
+          workspaces: formData.slackWorkspaceId ? [formData.slackWorkspaceId] : [],
+          knowledge_sources: knowledgeSourcesPayload,
+        },
+      };
+
+      const url = editMode 
+        ? `${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`
+        : `${import.meta.env.VITE_API_BASE_URL}/agents`;
+      
+      const method = editMode ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: formData.name,
-          type: formData.type,
-          status: 'active',
-          configuration: {
-            channels: formData.slackChannels,
-            workspaces: formData.slackWorkspaceId ? [formData.slackWorkspaceId] : [],
-            knowledge_sources: knowledgeSourcesPayload,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update agent');
+        throw new Error(editMode ? 'Failed to update agent' : 'Failed to create agent');
       }
 
       if (onComplete) {
         onComplete();
       }
     } catch (error) {
-      console.error('Error updating agent:', error);
-      setError('Failed to update agent. Please try again.');
+      console.error('Error saving agent:', error);
+      setError(editMode ? 'Failed to update agent. Please try again.' : 'Failed to create agent. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1517,7 +1611,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
           }}
           className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
         >
-          {isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent'}
+          {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
         </button>
       </div>
     </div>
@@ -1624,20 +1718,48 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       }
 
       const data = await response.json();
+      
+      // Get the list of previously selected files from agent details
+      const previouslySelectedFiles = editMode && agentDetails?.configuration?.knowledge_sources
+        ?.find((source: any) => source.type === sourceId)?.files || [];
+
+      // Process files and mark previously selected ones
+      const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => ({
+        ...file,
+        selected: previouslySelectedFiles.some((selectedFile: any) => selectedFile.id === file.id),
+        expanded: file.expanded || false,
+        size: Number(file.size) || 0,
+        children: file.children ? file.children.map((child: KnowledgeSourceFile) => ({
+          ...child,
+          selected: previouslySelectedFiles.some((selectedFile: any) => selectedFile.id === child.id),
+          size: Number(child.size) || 0,
+        })) : undefined,
+      }));
+
+      const totalSize = calculateTotalSize(processedFiles);
+      const selectedSize = calculateSelectedSize(processedFiles);
+      
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
-          files: data.files || [],
-          totalSize: data.totalFiles || 0,
-          selectedSize: 0,
+          files: processedFiles,
+          totalSize: totalSize,
+          selectedSize: selectedSize
         }
       }));
+
+      if (data.account_info) {
+        setConnectedAccounts(prev => ({
+          ...prev,
+          [sourceId]: data.account_info
+        }));
+      }
     } catch (error) {
       console.error('Error fetching files:', error);
       setFileErrors(prev => ({ 
         ...prev, 
-        [sourceId]: `Failed to fetch files: ${error.message}` 
+        [sourceId]: `Failed to fetch files: ${error instanceof Error ? error.message : 'Unknown error'}` 
       }));
     }
   };
@@ -1659,7 +1781,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       <div className="max-w-4xl w-full mx-auto p-8 space-y-8">
         <div className="text-center">
           <h2 className="text-2xl font-semibold text-gray-900">
-            {isOnboarding ? "Welcome! Let's Create Your First Agent" : "Create New Agent"}
+            {editMode ? "Edit Agent" : (isOnboarding ? "Welcome! Let's Create Your First Agent" : "Create New Agent")}
           </h2>
           <p className="text-sm text-gray-500 mt-1">Step {currentStep} of 5: {stepTitles[currentStep - 1]}</p>
         </div>
@@ -1728,7 +1850,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                 }}
                 className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
               >
-                {isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent'}
+                {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
               </button>
             </div>
           )}
