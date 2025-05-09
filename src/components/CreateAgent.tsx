@@ -1788,6 +1788,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         })) : undefined,
       }));
 
+      // Calculate total size
       const totalSize = processedFiles.reduce((acc, file) => {
         const fileSize = Number(file.size) || 0;
         if (file.children) {
@@ -1796,19 +1797,26 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         return acc + fileSize;
       }, 0);
 
+      // Calculate selected size based on previously selected files
       const selectedSize = processedFiles.reduce((acc, file) => {
+        let fileSelectedSize = 0;
+        
+        // Check if this file is selected
         if (file.selected) {
-          acc += Number(file.size) || 0;
+          fileSelectedSize += Number(file.size) || 0;
         }
+        
+        // Check children if they exist
         if (file.children) {
-          acc += file.children.reduce((childAcc, child) => {
+          fileSelectedSize += file.children.reduce((childAcc, child) => {
             if (child.selected) {
               return childAcc + (Number(child.size) || 0);
             }
             return childAcc;
           }, 0);
         }
-        return acc;
+        
+        return acc + fileSelectedSize;
       }, 0);
       
       setSourceState(prev => ({
