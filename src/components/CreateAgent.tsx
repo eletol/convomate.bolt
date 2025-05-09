@@ -2,7 +2,7 @@ import React from 'react';
 import { Bot, Upload, ArrowLeft, Check, Slack, FileText, Book, CheckSquare, FileCode2, X, ChevronDown, ChevronRight, Loader2, Search, Plus, Trash2 } from 'lucide-react';
 import { auth } from '../config/firebase';
 import { integrationService } from '../services/integrations';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useAgents } from '../contexts/AgentsContext';
@@ -288,6 +288,7 @@ function formatBytes(bytes: number | undefined): string {
 }
 
 function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = false, agentId: initialAgentId }: CreateAgentProps) {
+  const { agentId: urlAgentId } = useParams();
   const [currentStep, setCurrentStep] = React.useState(1);
   const [formData, setFormData] = React.useState({
     name: '',
@@ -321,21 +322,24 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = React.useState(editMode);
 
+  // Use the agentId from URL params if in edit mode
+  const effectiveAgentId = editMode ? urlAgentId || initialAgentId : initialAgentId;
+
   // Load agent data when in edit mode
   React.useEffect(() => {
     const loadAgentData = async () => {
-      if (!editMode || !initialAgentId) {
+      if (!editMode || !effectiveAgentId) {
         setIsLoading(false);
         return;
       }
 
-      console.log('Loading agent data for:', initialAgentId);
+      console.log('Loading agent data for:', effectiveAgentId);
       setIsLoading(true);
 
       try {
         const token = await auth.currentUser?.getIdToken();
         console.log('Fetching agent details...');
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${initialAgentId}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${effectiveAgentId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -349,7 +353,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         const agentData = await response.json();
         console.log('Agent data loaded:', agentData);
         setAgentDetails(agentData);
-        setAgentId(initialAgentId);
+        setAgentId(effectiveAgentId);
 
         // Set basic information
         setFormData(prev => ({
@@ -365,7 +369,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
             ...prev,
             slackWorkspaceId: agentData.slack_integration.team_id || '',
           }));
-          await fetchSlackChannels(initialAgentId);
+          await fetchSlackChannels(effectiveAgentId);
           
           // Set selected channels
           if (agentData.slack_channels?.length > 0) {
@@ -413,7 +417,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     };
 
     loadAgentData();
-  }, [editMode, initialAgentId]);
+  }, [editMode, effectiveAgentId]);
 
   const handleSourceAuth = async (sourceId: string) => {
     if (sourceState[sourceId].isAuthenticated) return;

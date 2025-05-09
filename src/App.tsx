@@ -58,6 +58,19 @@ const App: React.FC = () => {
           }
         />
         <Route
+          path="/dashboard/agents/:agentId/edit"
+          element={
+            <ProtectedRoute>
+              <div className="flex h-screen bg-gray-50">
+                <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+                <main className="flex-1 overflow-y-auto p-8">
+                  <CreateAgent editMode={true} />
+                </main>
+              </div>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/agents/:agentId/slack-connected"
           element={
             <ProtectedRoute>

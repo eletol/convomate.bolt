@@ -366,7 +366,7 @@ function Agents(): React.ReactElement {
               <AgentCard
                 key={agent.agent_id}
                 agent={agent}
-                onSelect={() => setSelectedAgent(agent.agent_id)}
+                onSelect={() => navigate(`/dashboard/agents/${agent.agent_id}/edit`)}
                 onShowActions={(e) => handleShowActions(agent.agent_id, e)}
                 showActions={showActions === agent.agent_id}
               />

@@ -187,10 +187,11 @@ const AgentDetail: React.FC = () => {
                 {agent.status === 'active' ? 'Active' : 'Inactive'}
               </button>
               <button
-                onClick={() => navigate(`/dashboard/agents/${agentId}/settings`)}
-                className="text-gray-400 hover:text-gray-500"
+                onClick={() => navigate(`/dashboard/agents/${agentId}/edit`)}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-[#4A154B] hover:bg-[#611f69]"
               >
-                <Settings className="h-5 w-5" />
+                <Settings className="w-4 h-4 mr-2" />
+                Edit Agent
               </button>
               <button
                 onClick={handleDelete}
