@@ -305,6 +305,30 @@ function formatBytes(bytes: number | undefined): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+// Calculation helpers outside the component for stability
+const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
+  return files.reduce((acc, file) => {
+    if (file.selected && file.type !== 'folder') {
+      acc++;
+    }
+    if (file.children && file.children.length > 0) {
+      acc += calculateSelectedCount(file.children);
+    }
+    return acc;
+  }, 0);
+};
+const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
+  return files.reduce((acc, file) => {
+    if (file.selected && file.type !== 'folder') {
+      acc += Number(file.size) || 0;
+    }
+    if (file.children && file.children.length > 0) {
+      acc += calculateSelectedSize(file.children);
+    }
+    return acc;
+  }, 0);
+};
+
 function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = false, agentId: initialAgentId }: CreateAgentProps) {
   const { agentId: urlAgentId } = useParams();
   const [currentStep, setCurrentStep] = React.useState(editMode ? 3 : 1);
@@ -1738,18 +1762,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     }, 0);
   };
 
-  const calculateSelectedFileCount = (files: KnowledgeSourceFile[]): number => {
-    return files.reduce((acc, file) => {
-      if (file.selected) {
-        acc++;
-      }
-      if (file.children) {
-        acc += calculateSelectedFileCount(file.children);
-      }
-      return acc;
-    }, 0);
-  };
-
   const handleSaveFiles = async (sourceId: string) => {
     try {
       setIsSaving(prev => ({ ...prev, [sourceId]: true }));
@@ -1863,28 +1875,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       });
 
       // Always calculate selected count and size recursively
-      const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
-        return files.reduce((acc, file) => {
-          if (file.selected && file.type !== 'folder') {
-            acc++;
-          }
-          if (file.children && file.children.length > 0) {
-            acc += calculateSelectedCount(file.children);
-          }
-          return acc;
-        }, 0);
-      };
-      const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
-        return files.reduce((acc, file) => {
-          if (file.selected && file.type !== 'folder') {
-            acc += Number(file.size) || 0;
-          }
-          if (file.children && file.children.length > 0) {
-            acc += calculateSelectedSize(file.children);
-          }
-          return acc;
-        }, 0);
-      };
       const selectedFileCount = calculateSelectedCount(processedFiles);
       const selectedSize = calculateSelectedSize(processedFiles);
       const totalSize = data.total_size || 0;
@@ -1923,6 +1913,29 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       }));
     }
   };
+
+  // Forced recalculation effect for selected count and size
+  React.useEffect(() => {
+    Object.entries(sourceState).forEach(([sourceId, state]) => {
+      if (state.files && state.files.length > 0) {
+        const selectedFileCount = calculateSelectedCount(state.files);
+        const selectedSize = calculateSelectedSize(state.files);
+        if (
+          state.selectedFileCount !== selectedFileCount ||
+          state.selectedSize !== selectedSize
+        ) {
+          setSourceState(prev => ({
+            ...prev,
+            [sourceId]: {
+              ...prev[sourceId],
+              selectedFileCount,
+              selectedSize,
+            }
+          }));
+        }
+      }
+    });
+  }, [sourceState]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center relative">
