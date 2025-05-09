@@ -315,6 +315,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
   const [agentId, setAgentId] = React.useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const [agentDetails, setAgentDetails] = React.useState<any>(null);
+  const [isSaving, setIsSaving] = React.useState<Record<string, boolean>>({});
+  const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
 
   const handleSourceAuth = async (sourceId: string) => {
     if (sourceState[sourceId].isAuthenticated) return;
@@ -1250,6 +1252,12 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                   />
                 </div>
 
+                {fileErrors[source.id] && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+                    {fileErrors[source.id]}
+                  </div>
+                )}
+
                 <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto">
                   <div className="p-4">
                     <div className="space-y-2">
@@ -1279,6 +1287,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
                               </p>
                             )}
                           </div>
+                          {file.selected && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                              Saved
+                            </span>
+                          )}
                           {file.children && (
                             <button
                               onClick={(e) => {
@@ -1312,13 +1325,18 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const selectedFiles = getSelectedFiles(sourceState[source.id].files);
-                    console.log(`Saving ${selectedFiles.length} files for ${source.name}`);
-                  }}
-                  className="w-full px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] transition-colors"
+                  onClick={() => handleSaveFiles(source.id)}
+                  disabled={isSaving[source.id] || calculateSelectedFileCount(sourceState[source.id].files) === 0}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Selection
+                  {isSaving[source.id] ? (
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </div>
+                  ) : (
+                    'Save Selection'
+                  )}
                 </button>
               </div>
             )}
@@ -1541,6 +1559,87 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack }: CreateAgentPr
       }
       return acc;
     }, 0);
+  };
+
+  const handleSaveFiles = async (sourceId: string) => {
+    try {
+      setIsSaving(prev => ({ ...prev, [sourceId]: true }));
+      setFileErrors(prev => ({ ...prev, [sourceId]: '' }));
+      
+      const token = await auth.currentUser?.getIdToken();
+      const selectedFiles = getSelectedFiles(sourceState[sourceId].files);
+      
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}/${sourceId}/files`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(selectedFiles),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save files');
+      }
+
+      const data = await response.json();
+      if (data.status === 'success') {
+        // Update the files to show they are saved
+        setSourceState(prev => ({
+          ...prev,
+          [sourceId]: {
+            ...prev[sourceId],
+            files: prev[sourceId].files.map(file => ({
+              ...file,
+              selected: selectedFiles.some(f => f.id === file.id) ? true : file.selected
+            }))
+          }
+        }));
+      } else {
+        throw new Error(data.message || 'Failed to save files');
+      }
+    } catch (error) {
+      console.error('Error saving files:', error);
+      setFileErrors(prev => ({ 
+        ...prev, 
+        [sourceId]: `Failed to save files: ${error.message}` 
+      }));
+    } finally {
+      setIsSaving(prev => ({ ...prev, [sourceId]: false }));
+    }
+  };
+
+  const fetchFilesForSource = async (sourceId: string) => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}/${sourceId}/files`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch files');
+      }
+
+      const data = await response.json();
+      setSourceState(prev => ({
+        ...prev,
+        [sourceId]: {
+          ...prev[sourceId],
+          files: data.files || [],
+          totalSize: data.totalFiles || 0,
+          selectedSize: 0,
+        }
+      }));
+    } catch (error) {
+      console.error('Error fetching files:', error);
+      setFileErrors(prev => ({ 
+        ...prev, 
+        [sourceId]: `Failed to fetch files: ${error.message}` 
+      }));
+    }
   };
 
   return (
