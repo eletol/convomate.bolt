@@ -1325,235 +1325,226 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   const renderKnowledgeSources = () => (
     <div className="space-y-6 max-w-3xl">
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center space-y-4 py-8">
-          <Loader2 className="w-8 h-8 animate-spin text-[#4A154B]" />
-          <p className="text-gray-600">Loading knowledge sources...</p>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4">
-            {knowledgeSources.map((source) => (
-              <div
-                key={source.id}
-                className={`w-full p-6 text-left rounded-lg border transition-colors ${
-                  sourceState[source.id].isAuthenticated
-                    ? 'border-[#4A154B] bg-[#4A154B]/5'
-                    : 'border-gray-200 hover:border-[#4A154B] hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="p-3 bg-[#4A154B]/10 rounded-lg">
-                      <source.icon className="w-6 h-6 text-[#4A154B]" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900">{source.name}</h3>
-                      <p className="text-sm text-gray-500 mt-1">{source.description}</p>
-                      {sourceState[source.id].isAuthenticated && connectedAccounts[source.id] && (
-                        <p className="text-sm text-[#4A154B] mt-2">
-                          Connected as {connectedAccounts[source.id]}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {sourceState[source.id].isAuthenticated ? (
-                    <div className="flex items-center space-x-2">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        <Check className="w-4 h-4 mr-1" />
-                        Connected
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSourceState(prev => ({
-                            ...prev,
-                            [source.id]: initialSourceState,
-                          }));
-                          setConnectedAccounts(prev => {
-                            const newAccounts = { ...prev };
-                            delete newAccounts[source.id];
-                            return newAccounts;
-                          });
-                        }}
-                        className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  ) : sourceState[source.id].isConnecting ? (
-                    <div className="flex items-center space-x-2">
-                      <Loader2 className="w-5 h-5 animate-spin text-[#4A154B]" />
-                      <span className="text-sm text-gray-500">Connecting...</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (!sourceState[source.id].isAuthenticated) {
-                          handleSourceAuth(source.id);
-                        }
-                      }}
-                      className="text-sm text-[#4A154B]"
-                    >
-                      Click to connect
-                    </button>
+      <div className="grid grid-cols-1 gap-4">
+        {knowledgeSources.map((source) => (
+          <div
+            key={source.id}
+            className={`w-full p-6 text-left rounded-lg border transition-colors ${
+              sourceState[source.id].isAuthenticated
+                ? 'border-[#4A154B] bg-[#4A154B]/5'
+                : 'border-gray-200 hover:border-[#4A154B] hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-[#4A154B]/10 rounded-lg">
+                  <source.icon className="w-6 h-6 text-[#4A154B]" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">{source.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{source.description}</p>
+                  {sourceState[source.id].isAuthenticated && connectedAccounts[source.id] && (
+                    <p className="text-sm text-[#4A154B] mt-2">
+                      Connected as {connectedAccounts[source.id]}
+                    </p>
                   )}
                 </div>
+              </div>
+              
+              {sourceState[source.id].isAuthenticated ? (
+                <div className="flex items-center space-x-2">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <Check className="w-4 h-4 mr-1" />
+                    Connected
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSourceState(prev => ({
+                        ...prev,
+                        [source.id]: initialSourceState,
+                      }));
+                      setConnectedAccounts(prev => {
+                        const newAccounts = { ...prev };
+                        delete newAccounts[source.id];
+                        return newAccounts;
+                      });
+                    }}
+                    className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : sourceState[source.id].isConnecting ? (
+                <div className="flex items-center space-x-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#4A154B]" />
+                  <span className="text-sm text-gray-500">Connecting...</span>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!sourceState[source.id].isAuthenticated) {
+                      handleSourceAuth(source.id);
+                    }
+                  }}
+                  className="text-sm text-[#4A154B]"
+                >
+                  Click to connect
+                </button>
+              )}
+            </div>
 
-                {sourceState[source.id].isAuthenticated && (
-                  <div className="mt-6 space-y-4">
-                    {sourceState[source.id].isLoading ? (
-                      <div className="flex flex-col items-center justify-center space-y-2 py-4">
-                        <Loader2 className="w-6 h-6 animate-spin text-[#4A154B]" />
-                        <p className="text-sm text-gray-500">Loading files...</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder={`Search ${source.name} documents...`}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4A154B] focus:border-transparent"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-
-                        {fileErrors[source.id] && (
-                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
-                            {fileErrors[source.id]}
-                          </div>
-                        )}
-
-                        <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto">
-                          <div className="p-4">
-                            <div className="space-y-2">
-                              {filterFiles(sourceState[source.id].files, searchQuery).map(file => (
-                                <div
-                                  key={file.id}
-                                  className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
-                                  onClick={() => toggleFile(source.id, file.id, sourceState, setSourceState)}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={file.selected || false}
-                                    onChange={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      toggleFile(source.id, file.id, sourceState, setSourceState);
-                                    }}
-                                    className="h-4 w-4 text-[#4A154B] border-gray-300 rounded focus:ring-[#4A154B]"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                      {file.name}
-                                    </p>
-                                    {file.type !== 'folder' && (
-                                      <p className="text-xs text-gray-500">
-                                        {formatBytes(file.size)}
-                                      </p>
-                                    )}
-                                  </div>
-                                  {file.selected && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                      Saved
-                                    </span>
-                                  )}
-                                  {file.children && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        toggleExpand(source.id, file.id);
-                                      }}
-                                      className="p-1 hover:bg-gray-100 rounded"
-                                    >
-                                      {file.expanded ? (
-                                        <ChevronDown className="h-4 w-4 text-gray-500" />
-                                      ) : (
-                                        <ChevronRight className="h-4 w-4 text-gray-500" />
-                                      )}
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">
-                            Selected: {sourceState[source.id].selectedFileCount} Files ({formatBytes(sourceState[source.id].selectedSize)})
-                          </span>
-                          <span className="text-gray-500">
-                            Total available: {calculateFileCount(sourceState[source.id].files)} Files
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSaveFiles(source.id)}
-                          disabled={isSaving[source.id] || calculateSelectedFileCount(sourceState[source.id].files) === 0}
-                          className="w-full px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isSaving[source.id] ? (
-                            <div className="flex items-center justify-center">
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Saving...
-                            </div>
-                          ) : (
-                            'Save Selection'
-                          )}
-                        </button>
-                      </>
-                    )}
+            {sourceState[source.id].isAuthenticated && (
+              <div className="mt-6 space-y-4">
+                {sourceState[source.id].isLoading ? (
+                  <div className="flex flex-col items-center justify-center space-y-2 py-8">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#4A154B]" />
+                    <p className="text-sm text-gray-500">Loading files...</p>
                   </div>
+                ) : (
+                  <>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder={`Search ${source.name} documents...`}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4A154B] focus:border-transparent"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+
+                    {fileErrors[source.id] && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+                        {fileErrors[source.id]}
+                      </div>
+                    )}
+
+                    <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto">
+                      <div className="p-4">
+                        <div className="space-y-2">
+                          {filterFiles(sourceState[source.id].files, searchQuery).map(file => (
+                            <div
+                              key={file.id}
+                              className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                              onClick={() => toggleFile(source.id, file.id, sourceState, setSourceState)}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={file.selected || false}
+                                onChange={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleFile(source.id, file.id, sourceState, setSourceState);
+                                }}
+                                className="h-4 w-4 text-[#4A154B] border-gray-300 rounded focus:ring-[#4A154B]"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {file.name}
+                                </p>
+                                {file.type !== 'folder' && (
+                                  <p className="text-xs text-gray-500">
+                                    {formatBytes(file.size)}
+                                  </p>
+                                )}
+                              </div>
+                              {file.selected && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  Saved
+                                </span>
+                              )}
+                              {file.children && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleExpand(source.id, file.id);
+                                  }}
+                                  className="p-1 hover:bg-gray-100 rounded"
+                                >
+                                  {file.expanded ? (
+                                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 text-gray-500" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">
+                        Selected: {sourceState[source.id].selectedFileCount} Files ({formatBytes(sourceState[source.id].selectedSize)})
+                      </span>
+                      <span className="text-gray-500">
+                        Total available: {calculateFileCount(sourceState[source.id].files)} Files
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveFiles(source.id)}
+                      disabled={isSaving[source.id] || sourceState[source.id].selectedFileCount === 0}
+                      className="w-full px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSaving[source.id] ? (
+                        <div className="flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </div>
+                      ) : (
+                        'Save Selection'
+                      )}
+                    </button>
+                  </>
                 )}
               </div>
-            ))}
+            )}
           </div>
+        ))}
+      </div>
 
-          {Object.values(sourceState).some(state => state.isAuthenticated) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Total Selected Data</h3>
-              <div className="space-y-4">
-                {Object.entries(sourceState).map(([sourceId, state]) => {
-                  if (!state.isAuthenticated || state.selectedSize === 0) return null;
-                  const source = knowledgeSources.find(s => s.id === sourceId);
-                  if (!source) return null;
-                  const IconComponent = source.icon;
-                  return (
-                    <div key={sourceId} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <IconComponent className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm text-gray-600">{source.name}</span>
-                      </div>
-                      <span className="text-sm text-gray-900">{formatBytes(state.selectedSize)}</span>
-                    </div>
-                  );
-                })}
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between font-medium">
-                    <span className="text-gray-900">Total Size</span>
-                    <span className="text-gray-900">
-                      {formatBytes(
-                        Object.values(sourceState).reduce(
-                          (acc, state) => acc + state.selectedSize,
-                          0
-                        )
-                      )}
-                    </span>
+      {Object.values(sourceState).some(state => state.isAuthenticated) && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Total Selected Data</h3>
+          <div className="space-y-4">
+            {Object.entries(sourceState).map(([sourceId, state]) => {
+              if (!state.isAuthenticated || state.selectedSize === 0) return null;
+              const source = knowledgeSources.find(s => s.id === sourceId);
+              if (!source) return null;
+              const IconComponent = source.icon;
+              return (
+                <div key={sourceId} className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <IconComponent className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">{source.name}</span>
                   </div>
+                  <span className="text-sm text-gray-900">{formatBytes(state.selectedSize)}</span>
                 </div>
+              );
+            })}
+            <div className="pt-4 border-t border-gray-200">
+              <div className="flex items-center justify-between font-medium">
+                <span className="text-gray-900">Total Size</span>
+                <span className="text-gray-900">
+                  {formatBytes(
+                    Object.values(sourceState).reduce(
+                      (acc, state) => acc + state.selectedSize,
+                      0
+                    )
+                  )}
+                </span>
               </div>
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
 
       <div className="flex justify-between pt-6">
