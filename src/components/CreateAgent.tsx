@@ -289,7 +289,7 @@ function formatBytes(bytes: number | undefined): string {
 
 function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = false, agentId: initialAgentId }: CreateAgentProps) {
   const { agentId: urlAgentId } = useParams();
-  const [currentStep, setCurrentStep] = React.useState(1);
+  const [currentStep, setCurrentStep] = React.useState(editMode ? 3 : 1);
   const [formData, setFormData] = React.useState({
     name: '',
     slackWorkspaceId: '',
@@ -856,10 +856,40 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   };
 
   const handleNext = async () => {
-    if (currentStep === 2) {
+    if (currentStep === 2 && !editMode) {
       try {
         await createDraftAgent();
       } catch (error) {
+        return;
+      }
+    }
+
+    // Save name and type changes in edit mode
+    if (editMode && (currentStep === 1 || currentStep === 2)) {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            type: formData.type,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update agent details');
+        }
+
+        // Update local state with the response
+        const updatedAgent = await response.json();
+        setAgentDetails(updatedAgent);
+      } catch (error) {
+        console.error('Error updating agent details:', error);
+        setError('Failed to update agent details. Please try again.');
         return;
       }
     }
