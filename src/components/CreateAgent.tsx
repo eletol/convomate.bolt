@@ -323,6 +323,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const [isSaving, setIsSaving] = React.useState<Record<string, boolean>>({});
   const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = React.useState(editMode);
+  const navigate = useNavigate();
 
   // Use the agentId from URL params if in edit mode
   const effectiveAgentId = editMode ? urlAgentId || initialAgentId : initialAgentId;
@@ -1671,9 +1672,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                 throw new Error('Failed to update agent status');
               }
 
-              if (onComplete) {
-                onComplete();
-              }
+              // Navigate to agents route
+              navigate('/dashboard/agents');
             } catch (error) {
               console.error('Error updating agent status:', error);
               setError('Failed to update agent status. Please try again.');
