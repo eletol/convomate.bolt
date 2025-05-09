@@ -1750,12 +1750,12 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   const fetchFilesForSource = async (sourceId: string) => {
     try {
-      if (!agentId) {
+      if (!effectiveAgentId) {
         throw new Error('Agent ID is required to fetch files');
       }
 
       const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}/${sourceId}/files`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${effectiveAgentId}/${sourceId}/files`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
