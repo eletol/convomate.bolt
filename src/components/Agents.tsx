@@ -299,6 +299,37 @@ function Agents(): React.ReactElement {
     fetchAgents(true);
   }, [fetchAgents]);
 
+  // Optimize agent status update
+  const updateAgentStatus = React.useCallback(async (agentId: string, newStatus: string) => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update agent status');
+      }
+
+      // Update local state instead of full reload
+      setAgents(prevAgents => 
+        prevAgents.map(agent => 
+          agent.agent_id === agentId 
+            ? { ...agent, status: newStatus }
+            : agent
+        )
+      );
+    } catch (error) {
+      console.error('Error updating agent status:', error);
+      throw error;
+    }
+  }, []);
+
   // Memoize filtered agents based on debounced search query
   const filteredAgents = React.useMemo(() => {
     if (!debouncedSearchQuery) return agents;
@@ -319,6 +350,13 @@ function Agents(): React.ReactElement {
     ),
     [filteredAgents, currentPage, itemsPerPage]
   );
+
+  // Close actions menu when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = () => setShowActions(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const handleCreateAgent = () => {
     setIsCreating(true);
@@ -347,17 +385,13 @@ function Agents(): React.ReactElement {
       <div className="text-center text-red-600">
         <p>{error}</p>
         <button
-          onClick={fetchAgents}
+          onClick={() => fetchAgents(true)}
           className="mt-4 px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
         >
           Try Again
         </button>
       </div>
     );
-  }
-
-  if (agents.length === 0) {
-    return <EmptyState onCreateAgent={handleCreateAgent} />;
   }
 
   return (
@@ -404,11 +438,8 @@ function Agents(): React.ReactElement {
             <p className="text-gray-500">Loading agents...</p>
           </div>
         </div>
-      ) : paginatedAgents.length === 0 ? (
-        <EmptyState 
-          onCreateAgent={handleCreateAgent} 
-          isSearchResult={!!searchQuery}
-        />
+      ) : agents.length === 0 ? (
+        <EmptyState onCreateAgent={handleCreateAgent} />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
