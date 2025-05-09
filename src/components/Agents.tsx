@@ -324,11 +324,14 @@ function Agents(): React.ReactElement {
             : agent
         )
       );
+
+      // Redirect to agents route
+      navigate('/dashboard/agents');
     } catch (error) {
       console.error('Error updating agent status:', error);
       throw error;
     }
-  }, []);
+  }, [navigate]);
 
   // Memoize filtered agents based on debounced search query
   const filteredAgents = React.useMemo(() => {
