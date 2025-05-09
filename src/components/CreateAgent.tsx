@@ -79,6 +79,7 @@ interface SourceAuthState {
   files: KnowledgeSourceFile[];
   totalSize: number;
   selectedSize: number;
+  selectedFileCount: number;
 }
 
 const initialSourceState: SourceAuthState = {
@@ -87,6 +88,7 @@ const initialSourceState: SourceAuthState = {
   files: [],
   totalSize: 0,
   selectedSize: 0,
+  selectedFileCount: 0
 };
 
 const mockFiles = {
@@ -1455,7 +1457,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">
-                    Selected: {calculateSelectedFileCount(sourceState[source.id].files)} Files ({formatBytes(sourceState[source.id].selectedSize || 0)})
+                    Selected: {sourceState[source.id].selectedFileCount} Files ({formatBytes(sourceState[source.id].selectedSize)})
                   </span>
                   <span className="text-gray-500">
                     Total available: {calculateFileCount(sourceState[source.id].files)} Files
@@ -1650,9 +1652,32 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         </button>
         <button
           type="submit"
-          onClick={(e) => {
+          onClick={async (e) => {
             e.preventDefault();
-            if (onComplete) onComplete();
+            try {
+              const token = await auth.currentUser?.getIdToken();
+              const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  status: 'active'
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error('Failed to update agent status');
+              }
+
+              if (onComplete) {
+                onComplete();
+              }
+            } catch (error) {
+              console.error('Error updating agent status:', error);
+              setError('Failed to update agent status. Please try again.');
+            }
           }}
           className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
         >
@@ -1775,48 +1800,50 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       const previouslySelectedFiles = editMode && agentDetails?.configuration?.knowledge_sources
         ?.find((source: any) => source.type === sourceId)?.files || [];
 
+      // Create a map of previously selected files for quick lookup
+      const selectedFilesMap = new Map(
+        previouslySelectedFiles.map((file: any) => [file.id, file])
+      );
+
       // Process files and mark previously selected ones
-      const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => ({
-        ...file,
-        selected: previouslySelectedFiles.some((selectedFile: any) => selectedFile.id === file.id),
-        expanded: file.expanded || false,
-        size: Number(file.size) || 0,
-        children: file.children ? file.children.map((child: KnowledgeSourceFile) => ({
-          ...child,
-          selected: previouslySelectedFiles.some((selectedFile: any) => selectedFile.id === child.id),
-          size: Number(child.size) || 0,
-        })) : undefined,
-      }));
-
-      // Calculate total size
-      const totalSize = processedFiles.reduce((acc, file) => {
-        const fileSize = Number(file.size) || 0;
-        if (file.children) {
-          return acc + fileSize + file.children.reduce((childAcc, child) => childAcc + (Number(child.size) || 0), 0);
-        }
-        return acc + fileSize;
-      }, 0);
-
-      // Calculate selected size based on previously selected files
-      const selectedSize = processedFiles.reduce((acc, file) => {
-        let fileSelectedSize = 0;
+      const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => {
+        const isSelected = selectedFilesMap.has(file.id);
+        const selectedFile = selectedFilesMap.get(file.id);
         
-        // Check if this file is selected
+        return {
+          ...file,
+          selected: isSelected,
+          expanded: file.expanded || false,
+          size: Number(file.size) || 0,
+          children: file.children ? file.children.map((child: KnowledgeSourceFile) => {
+            const isChildSelected = selectedFilesMap.has(child.id);
+            const selectedChild = selectedFilesMap.get(child.id);
+            
+            return {
+              ...child,
+              selected: isChildSelected,
+              size: Number(child.size) || 0,
+            };
+          }) : undefined,
+        };
+      });
+
+      // Use the total size and selected size from the API response
+      const totalSize = data.total_size || 0;
+      const selectedSize = data.selected_size || 0;
+      
+      // Calculate selected file count
+      const selectedFileCount = processedFiles.reduce((acc: number, file: KnowledgeSourceFile) => {
+        let count = 0;
         if (file.selected) {
-          fileSelectedSize += Number(file.size) || 0;
+          count++;
         }
-        
-        // Check children if they exist
         if (file.children) {
-          fileSelectedSize += file.children.reduce((childAcc, child) => {
-            if (child.selected) {
-              return childAcc + (Number(child.size) || 0);
-            }
-            return childAcc;
+          count += file.children.reduce((childAcc: number, child: KnowledgeSourceFile) => {
+            return childAcc + (child.selected ? 1 : 0);
           }, 0);
         }
-        
-        return acc + fileSelectedSize;
+        return acc + count;
       }, 0);
       
       setSourceState(prev => ({
@@ -1825,7 +1852,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           ...prev[sourceId],
           files: processedFiles,
           totalSize: totalSize,
-          selectedSize: selectedSize
+          selectedSize: selectedSize,
+          selectedFileCount: selectedFileCount
         }
       }));
 
@@ -1916,28 +1944,6 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                     className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Continue
-                  </button>
-                </div>
-              )}
-
-              {currentStep === 5 && (
-                <div className="flex justify-between">
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (onComplete) onComplete();
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
-                  >
-                    {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
                   </button>
                 </div>
               )}

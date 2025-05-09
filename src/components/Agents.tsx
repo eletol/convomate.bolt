@@ -53,9 +53,27 @@ interface AgentCardProps {
   onSelect: () => void;
   onShowActions: (event: React.MouseEvent<HTMLButtonElement>) => void;
   showActions: boolean;
+  onStatusUpdate: (agentId: string, newStatus: string) => Promise<void>;
 }
 
-function AgentCard({ agent, onSelect, onShowActions, showActions }: AgentCardProps) {
+function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate }: AgentCardProps) {
+  const [isUpdating, setIsUpdating] = React.useState(false);
+  const [isLoadingFiles, setIsLoadingFiles] = React.useState(false);
+
+  const handleToggleStatus = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setIsUpdating(true);
+    try {
+      await onStatusUpdate(agent.agent_id, agent.status === 'active' ? 'disabled' : 'active');
+    } catch (error) {
+      console.error('Error updating agent status:', error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div 
       className="bg-white rounded-xl border border-gray-200 hover:border-[#4A154B] transition-colors focus-within:ring-2 focus-within:ring-[#4A154B] focus-within:ring-offset-2"
@@ -93,10 +111,16 @@ function AgentCard({ agent, onSelect, onShowActions, showActions }: AgentCardPro
                     Duplicate
                   </button>
                   <button
-                    className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 w-full text-left min-h-[44px]"
+                    onClick={handleToggleStatus}
+                    disabled={isUpdating}
+                    className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 w-full text-left min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                     role="menuitem"
                   >
-                    <Power className="w-4 h-4 mr-3" />
+                    {isUpdating ? (
+                      <Loader2 className="w-4 h-4 mr-3 animate-spin" />
+                    ) : (
+                      <Power className="w-4 h-4 mr-3" />
+                    )}
                     {agent.status === 'active' ? 'Disable' : 'Enable'}
                   </button>
                   <button
@@ -144,14 +168,20 @@ function AgentCard({ agent, onSelect, onShowActions, showActions }: AgentCardPro
             <div>
               <p className="text-sm text-gray-500 mb-2">Connected Channels</p>
               <div className="flex flex-wrap gap-2">
-                {agent.channels.map((channel) => (
-                  <span
-                    key={channel}
-                    className="px-2 py-1 bg-[#4A154B]/10 text-[#4A154B] rounded-full text-xs"
-                  >
-                    {channel}
-                  </span>
-                ))}
+                {isLoadingFiles ? (
+                  <div className="flex items-center justify-center w-full py-2">
+                    <Loader2 className="w-4 h-4 text-[#4A154B] animate-spin" />
+                  </div>
+                ) : (
+                  agent.channels.map((channel) => (
+                    <span
+                      key={channel}
+                      className="px-2 py-1 bg-[#4A154B]/10 text-[#4A154B] rounded-full text-xs"
+                    >
+                      {channel}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -215,18 +245,32 @@ function Agents(): React.ReactElement {
   const [selectedAgent, setSelectedAgent] = React.useState<string | null>(null);
   const [isCreating, setIsCreating] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('');
   const [currentPage, setCurrentPage] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [error, setError] = React.useState<string | null>(null);
+  const [lastFetchTime, setLastFetchTime] = React.useState<number>(0);
   const itemsPerPage = 9;
+  const CACHE_DURATION = 30000; // 30 seconds cache
 
-  // Fetch agents on component mount
+  // Debounce search query
   React.useEffect(() => {
-    fetchAgents();
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
 
-  const fetchAgents = async () => {
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch agents with caching
+  const fetchAgents = React.useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastFetchTime < CACHE_DURATION) {
+      return; // Use cached data if within cache duration
+    }
+
+    setIsLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents`, {
@@ -241,36 +285,39 @@ function Agents(): React.ReactElement {
 
       const data = await response.json();
       setAgents(data);
+      setLastFetchTime(now);
     } catch (error) {
       console.error('Error fetching agents:', error);
       setError('Failed to load agents. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [lastFetchTime]);
 
-  // Close actions menu when clicking outside
+  // Initial fetch only
   React.useEffect(() => {
-    const handleClickOutside = () => setShowActions(null);
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
+    fetchAgents(true);
+  }, [fetchAgents]);
 
+  // Memoize filtered agents based on debounced search query
   const filteredAgents = React.useMemo(() => {
-    if (!searchQuery) return agents;
+    if (!debouncedSearchQuery) return agents;
     
-    const query = searchQuery.toLowerCase();
+    const query = debouncedSearchQuery.toLowerCase();
     return agents.filter(agent => 
       agent.name.toLowerCase().includes(query) ||
       agent.type.toLowerCase().includes(query) ||
       (agent.channels && agent.channels.some(channel => channel.toLowerCase().includes(query)))
     );
-  }, [agents, searchQuery]);
+  }, [agents, debouncedSearchQuery]);
 
   const totalPages = Math.ceil(filteredAgents.length / itemsPerPage);
-  const paginatedAgents = filteredAgents.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+  const paginatedAgents = React.useMemo(() => 
+    filteredAgents.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    ),
+    [filteredAgents, currentPage, itemsPerPage]
   );
 
   const handleCreateAgent = () => {
@@ -351,8 +398,11 @@ function Agents(): React.ReactElement {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <Loader2 className="w-8 h-8 text-[#4A154B] animate-spin" />
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="flex flex-col items-center space-y-4">
+            <Loader2 className="w-8 h-8 text-[#4A154B] animate-spin" />
+            <p className="text-gray-500">Loading agents...</p>
+          </div>
         </div>
       ) : paginatedAgents.length === 0 ? (
         <EmptyState 
@@ -369,6 +419,7 @@ function Agents(): React.ReactElement {
                 onSelect={() => navigate(`/dashboard/agents/${agent.agent_id}/edit`)}
                 onShowActions={(e) => handleShowActions(agent.agent_id, e)}
                 showActions={showActions === agent.agent_id}
+                onStatusUpdate={updateAgentStatus}
               />
             ))}
           </div>
