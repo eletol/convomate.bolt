@@ -947,14 +947,13 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     setCurrentStep(currentStep + 1);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
     try {
       const token = await auth.currentUser?.getIdToken();
-      
       const knowledgeSourcesPayload = Object.entries(sourceState)
         .filter(([_, state]) => state.isAuthenticated && state.selectedSize > 0)
         .map(([sourceId, state]) => ({
@@ -980,8 +979,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       const url = editMode 
         ? `${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`
         : `${import.meta.env.VITE_API_BASE_URL}/agents`;
-      
-      const method = editMode ? 'PUT' : 'POST';
+      const method = editMode ? 'PATCH' : 'POST';
 
       const response = await fetch(url, {
         method,
@@ -1866,46 +1864,50 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
               ))}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-8">
-              <div>{renderStep()}</div>
-
-              {currentStep !== 4 && currentStep !== 5 && (
-                <div className="flex justify-end pt-6">
-                  {(currentStep > 1 || !isOnboarding) && (
+            {currentStep !== 5 ? (
+              <form onSubmit={handleSubmit} className="space-y-8">
+                <div>{renderStep()}</div>
+                {currentStep !== 4 && currentStep !== 5 && (
+                  <div className="flex justify-end pt-6">
+                    {(currentStep > 1 || !isOnboarding) && (
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        {currentStep === 1 && !isOnboarding ? 'Cancel' : 'Back'}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleBack}
-                      className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                      onClick={handleNext}
+                      disabled={
+                        (currentStep === 1 && !formData.name) ||
+                        (currentStep === 2 && !formData.type) ||
+                        (currentStep === 3 && (!isSlackConnected || formData.slackChannels.length === 0))
+                      }
+                      className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {currentStep === 1 && !isOnboarding ? 'Cancel' : 'Back'}
+                      Continue
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={
-                      (currentStep === 1 && !formData.name) ||
-                      (currentStep === 2 && !formData.type) ||
-                      (currentStep === 3 && (!isSlackConnected || formData.slackChannels.length === 0))
-                    }
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Continue
-                  </button>
-                </div>
-              )}
-              {currentStep === 5 && (
+                  </div>
+                )}
+              </form>
+            ) : (
+              <>
+                {renderTestAgent()}
                 <div className="flex justify-end pt-6">
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={() => handleSubmit()}
                     disabled={isSubmitting}
                     className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
-              )}
-            </form>
+              </>
+            )}
           </div>
         </>
       )}
