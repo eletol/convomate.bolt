@@ -815,20 +815,20 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     setIsSending(true);
     try {
       const token = await auth.currentUser?.getIdToken();
-      const newMessages = [...messages, { role: 'user', content: inputMessage }];
+      const updatedMessages: Message[] = [...messages, { role: 'user', content: inputMessage }];
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: updatedMessages }),
       });
       if (!response.ok) {
         throw new Error('Failed to send message');
       }
       const data = await response.json();
-      setMessages(prev => [...newMessages, { role: 'system', content: data.reply }]);
+      setMessages([...updatedMessages, { role: 'system', content: data.answer || data.reply }]);
       setInputMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
@@ -995,6 +995,9 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       if (!response.ok) {
         throw new Error(editMode ? 'Failed to update agent' : 'Failed to create agent');
       }
+
+      // Redirect to agents dashboard after successful save
+      navigate('/dashboard/agents');
 
       if (onComplete) {
         onComplete();
@@ -1888,6 +1891,17 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                     className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Continue
+                  </button>
+                </div>
+              )}
+              {currentStep === 5 && (
+                <div className="flex justify-end pt-6">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               )}
