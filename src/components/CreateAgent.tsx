@@ -208,8 +208,8 @@ interface CreateAgentProps {
 }
 
 interface Message {
-  text: string;
-  sender: 'user' | 'agent';
+  role: 'user' | 'system';
+  content: string;
 }
 
 interface SlackChannel {
@@ -815,23 +815,20 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     setIsSending(true);
     try {
       const token = await auth.currentUser?.getIdToken();
+      const newMessages = [...messages, { role: 'user', content: inputMessage }];
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          messages: [...messages, { text: inputMessage, sender: 'user' }] 
-        }),
+        body: JSON.stringify({ messages: newMessages }),
       });
-      
       if (!response.ok) {
         throw new Error('Failed to send message');
       }
-      
       const data = await response.json();
-      setMessages(prev => [...prev, { text: inputMessage, sender: 'user' }, { text: data.reply, sender: 'agent' }]);
+      setMessages(prev => [...newMessages, { role: 'system', content: data.reply }]);
       setInputMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
@@ -1585,9 +1582,16 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       </div>
       <div className="border rounded-lg p-4 h-64 overflow-y-auto">
         {messages.map((message, index) => (
-          <div key={index} className={`mb-2 ${message.sender === 'user' ? 'text-right' : 'text-left'}`}>
-            <span className={`inline-block p-2 rounded-lg ${message.sender === 'user' ? 'bg-blue-100' : 'bg-gray-100'}`}>
-              {message.text}
+          <div
+            key={index}
+            className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}
+          >
+            <span
+              className={`inline-block p-2 rounded-lg ${
+                message.role === 'user' ? 'bg-blue-100' : 'bg-gray-100'
+              }`}
+            >
+              {message.content}
             </span>
           </div>
         ))}
