@@ -64,24 +64,37 @@ export default function Integrations() {
       ) : error ? (
         <div className="text-red-600 text-center">{error}</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {integrations.map(integration => (
-            <div key={integration.id} className="p-6 border rounded-lg bg-white">
-              <h3 className="text-lg font-bold mb-2">{integration.label}</h3>
-              {agentsByIntegration[integration.id].length === 0 ? (
-                <p className="text-gray-400 text-sm">No agents use this integration.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {agentsByIntegration[integration.id].map((agent: Agent) => (
-                    <span
-                      key={agent.agent_id}
-                      className="px-3 py-1 bg-[#4A154B]/10 text-[#4A154B] rounded-full text-xs font-medium"
-                    >
-                      {agent.name}
-                    </span>
-                  ))}
+        <div className="grid grid-cols-1 gap-6">
+          {integrations.map((integration) => (
+            <div
+              key={integration.id}
+              className="bg-white rounded-xl border border-gray-200 p-6 hover:border-[#4A154B] transition-colors"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-start space-x-4">
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">{integration.label}</h3>
+                    {agentsByIntegration[integration.id].length === 0 ? (
+                      <p className="text-gray-400 text-sm">No agents use this integration.</p>
+                    ) : (
+                      <div className="mt-3">
+                        <p className="text-sm font-medium text-gray-700">Agents using this integration:</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {agentsByIntegration[integration.id].map((agent: Agent) => (
+                            <span
+                              key={agent.agent_id}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#4A154B]/10 text-[#4A154B]"
+                            >
+                              {agent.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+                {/* ...rest of your card (status, connect/disconnect button, etc)... */}
+              </div>
             </div>
           ))}
         </div>
