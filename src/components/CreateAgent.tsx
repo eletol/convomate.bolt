@@ -813,9 +813,16 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
     setIsSending(true);
+
+    // Optimistically add the user's message to the chat
+    const newUserMessage: Message = { role: 'user', content: inputMessage };
+    setMessages(prev => [...prev, newUserMessage]);
+    setInputMessage('');
+
     try {
       const token = await auth.currentUser?.getIdToken();
-      const updatedMessages: Message[] = [...messages, { role: 'user', content: inputMessage }];
+      // Use the new message history including the just-added user message
+      const updatedMessages = [...messages, newUserMessage];
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
         method: 'POST',
         headers: {
@@ -828,8 +835,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         throw new Error('Failed to send message');
       }
       const data = await response.json();
-      setMessages([...updatedMessages, { role: 'system', content: data.answer || data.reply }]);
-      setInputMessage('');
+      setMessages(prev => [...prev, { role: 'system', content: data.answer || data.reply }]);
     } catch (error) {
       console.error('Error sending message:', error);
       setError(error instanceof Error ? error.message : 'Failed to send message. Please try again.');
