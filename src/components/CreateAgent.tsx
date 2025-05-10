@@ -3,14 +3,9 @@ import { Bot, Upload, ArrowLeft, Check, Slack, FileText, Book, CheckSquare, File
 import { auth } from '../config/firebase';
 import { integrationService } from '../services/integrations';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
-import { useAgents } from '../contexts/AgentsContext';
-import { useIntegrations } from '../contexts/IntegrationsContext';
-import { useKnowledgeSources } from '../contexts/KnowledgeSourcesContext';
-import { Agent, AgentType, KnowledgeSource, KnowledgeSourceFile } from '../types';
 import { Dialog } from '@headlessui/react';
 import { Listbox } from '@headlessui/react';
+import { Agent, AgentType, KnowledgeSource } from '../types';
 
 const mockSlackWorkspaces = [
   { id: '1', name: 'Acme Corp', domain: 'acme' },
@@ -213,15 +208,24 @@ interface CreateAgentProps {
 }
 
 interface Message {
-  id: string;
-  type: 'user' | 'bot';
-  content: string;
-  timestamp: Date;
+  text: string;
+  sender: 'user' | 'agent';
 }
 
 interface SlackChannel {
   id: string;
   name: string;
+}
+
+interface KnowledgeSourceFile {
+  id: string;
+  name: string;
+  size: number;
+  selected: boolean;
+  type?: string;
+  expanded?: boolean;
+  hidden?: boolean;
+  children?: KnowledgeSourceFile[];
 }
 
 const toggleFile = (sourceId: string, fileId: string, sourceState: Record<string, SourceAuthState>, setSourceState: React.Dispatch<React.SetStateAction<Record<string, SourceAuthState>>>) => {
@@ -364,6 +368,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const [fileErrors, setFileErrors] = React.useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = React.useState(editMode);
   const navigate = useNavigate();
+  const [isSending, setIsSending] = React.useState(false);
 
   // Use the agentId from URL params if in edit mode
   const effectiveAgentId = editMode ? urlAgentId || initialAgentId : initialAgentId;
@@ -805,58 +810,35 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!inputMessage.trim() || isTyping) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: inputMessage,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
-    setIsTyping(true);
-
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim()) return;
+    setIsSending(true);
     try {
-      await simulateResponse(inputMessage);
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          messages: [...messages, { text: inputMessage, sender: 'user' }] 
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+      
+      const data = await response.json();
+      setMessages(prev => [...prev, { text: inputMessage, sender: 'user' }, { text: data.reply, sender: 'agent' }]);
+      setInputMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        type: 'bot',
-        content: 'Sorry, there was an error processing your message. Please try again.',
-        timestamp: new Date()
-      }]);
+      setError(error instanceof Error ? error.message : 'Failed to send message. Please try again.');
     } finally {
-      setIsTyping(false);
+      setIsSending(false);
     }
-  };
-
-  const simulateResponse = async (userMessage: string) => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const responses = [
-      "Based on the HR documentation, I can help with that. The standard policy states that...",
-      "According to our employee handbook, here's what you need to know...",
-      "I've found relevant information in our knowledge base. Let me explain...",
-      "Based on our company policies, I can clarify this for you..."
-    ];
-
-    const randomResponse = responses[Math.floor(Math.random() * responses.length)] +
-      " This is a simulation. In production, I'll provide accurate answers based on your connected knowledge sources.";
-
-    const botMessage: Message = {
-      id: Date.now().toString(),
-      type: 'bot',
-      content: randomResponse,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, botMessage]);
   };
 
   const createDraftAgent = async () => {
@@ -1594,143 +1576,36 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   );
 
   const renderTestAgent = () => (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="border-b border-gray-200 p-4">
-          <h3 className="text-lg font-medium text-gray-900">Test Your Agent</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Try asking your agent a question to see how it responds using your connected knowledge sources.
-          </p>
-        </div>
-
-        <div className="h-[400px] flex flex-col">
-          <div 
-            ref={chatContainerRef}
-            className="flex-1 overflow-y-auto p-4 space-y-4"
-          >
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
-              >
-                <div 
-                  className={`flex items-start space-x-2 max-w-[80%] ${
-                    message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                  }`}
-                >
-                  <div 
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-medium ${
-                      message.type === 'user' ? 'bg-[#4A154B]' : 'bg-gray-500'
-                    }`}
-                  >
-                    {message.type === 'user' ? 'U' : 'A'}
-                  </div>
-                  <div 
-                    className={`rounded-2xl px-4 py-2 ${
-                      message.type === 'user' 
-                        ? 'bg-[#4A154B] text-white' 
-                        : 'bg-gray-100 text-gray-900'
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs mt-1 opacity-70">
-                      {message.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {isTyping && (
-              <div className="flex justify-start animate-fade-in">
-                <div className="flex items-start space-x-2">
-                  <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white font-medium">
-                    A
-                  </div>
-                  <div className="bg-gray-100 rounded-2xl px-4 py-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}/>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}/>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-gray-200 p-4">
-            <form onSubmit={handleSendMessage} className="flex items-end space-x-4">
-              <div className="flex-1">
-                <textarea
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage(e);
-                    }
-                  }}
-                  placeholder="Type your message..."
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#4A154B] focus:border-transparent resize-none"
-                  rows={1}
-                  style={{ minHeight: '44px', maxHeight: '120px' }}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!inputMessage.trim() || isTyping}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed h-[44px] flex items-center"
-              >
-                Send
-              </button>
-            </form>
-          </div>
-        </div>
+    <div className="w-full max-w-md mx-auto space-y-6">
+      <div className="text-center mb-6">
+        <h3 className="text-lg font-medium text-gray-900">Test Your Agent</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Ask your agent a question to see how it responds.
+        </p>
       </div>
-
-      <div className="flex justify-between">
+      <div className="border rounded-lg p-4 h-64 overflow-y-auto">
+        {messages.map((message, index) => (
+          <div key={index} className={`mb-2 ${message.sender === 'user' ? 'text-right' : 'text-left'}`}>
+            <span className={`inline-block p-2 rounded-lg ${message.sender === 'user' ? 'bg-blue-100' : 'bg-gray-100'}`}>
+              {message.text}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex">
+        <input
+          type="text"
+          value={inputMessage}
+          onChange={(e) => setInputMessage(e.target.value)}
+          className="flex-1 border rounded-l-lg p-2"
+          placeholder="Type your question here..."
+        />
         <button
-          type="button"
-          onClick={handleBack}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          onClick={handleSendMessage}
+          disabled={isSending}
+          className="bg-[#4A154B] text-white px-4 py-2 rounded-r-lg"
         >
-          Back
-        </button>
-        <button
-          type="submit"
-          onClick={async (e) => {
-            e.preventDefault();
-            try {
-              const token = await auth.currentUser?.getIdToken();
-              const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
-                method: 'PATCH',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  status: 'active'
-                }),
-              });
-
-              if (!response.ok) {
-                throw new Error('Failed to update agent status');
-              }
-
-              // Navigate to agents route
-              navigate('/dashboard/agents');
-            } catch (error) {
-              console.error('Error updating agent status:', error);
-              setError('Failed to update agent status. Please try again.');
-            }
-          }}
-          className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
-        >
-          {editMode ? 'Save Changes' : (isOnboarding ? 'Launch Agent & Continue' : 'Launch Agent')}
+          {isSending ? 'Sending...' : 'Send'}
         </button>
       </div>
     </div>
@@ -1803,7 +1678,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       console.error('Error saving files:', error);
       setFileErrors(prev => ({ 
         ...prev, 
-        [sourceId]: `Failed to save files: ${error.message}` 
+        [sourceId]: `Failed to save files: ${error instanceof Error ? error.message : 'Unknown error'}` 
       }));
     } finally {
       setIsSaving(prev => ({ ...prev, [sourceId]: false }));
