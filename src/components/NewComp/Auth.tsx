@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bot, Mail, Lock, Slack, ArrowRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { FcGoogle } from 'react-icons/fc';
 
 interface AuthProps {
   onComplete: (isSignUp: boolean) => void;
@@ -57,7 +58,7 @@ function Auth({ onComplete }: AuthProps) {
     }
   };
 
-  const handleSlackAuth = () => {
+  const handleGoogleAuth = () => {
     onComplete(isSignUp);
   };
 
@@ -173,11 +174,11 @@ function Auth({ onComplete }: AuthProps) {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
           <button
-            onClick={handleSlackAuth}
-            className="w-full flex justify-center items-center px-4 py-2 border border-[#4A154B] rounded-md shadow-sm text-sm font-medium text-[#4A154B] bg-white hover:bg-[#4A154B]/5 mb-6"
+            onClick={handleGoogleAuth}
+            className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 mb-6"
           >
-            <Slack className="w-5 h-5 mr-2" />
-            {isSignUp ? 'Sign up with Slack' : 'Sign in with Slack'}
+            <FcGoogle className="w-5 h-5 mr-2" />
+            {isSignUp ? 'Sign up with Google' : 'Sign in with Google'}
           </button>
 
           <div className="relative mb-6">

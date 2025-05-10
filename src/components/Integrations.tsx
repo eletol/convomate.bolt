@@ -77,11 +77,29 @@ export default function Integrations() {
     fetchAgents();
   }, []);
 
+  const handleRefreshAll = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/sync-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Failed to sync agents');
+      // Optionally, you can refetch agents here if needed
+      // await fetchAgents();
+    } catch (err) {
+      setError('Failed to refresh integrations.');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold text-gray-900">Integrations</h2>
-        <button className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]">
+        <button
+          onClick={handleRefreshAll}
+          className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
+        >
           Refresh All
         </button>
       </div>
