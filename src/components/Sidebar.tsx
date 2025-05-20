@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, Plug, HelpCircle, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Plug, HelpCircle, Settings, LogOut, Bot, MessageSquare, HardDrive, FileText } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { User } from 'firebase/auth';
+import { auth } from '../config/firebase';
+import { API_ENDPOINTS } from '../config/constants';
 
 const navigation = [
   { name: 'Overview', icon: LayoutDashboard, path: '/dashboard' },
@@ -12,6 +14,38 @@ const navigation = [
   { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
 ];
 
+interface PlanLimits {
+  agents: string;
+  messages: string;
+  storage_gb: string;
+  support_24_7: boolean;
+}
+
+interface Plan {
+  id: string;
+  name: string;
+  price: number;
+  limits: PlanLimits;
+}
+
+interface Usage {
+  agents: number;
+  messages: number;
+  storage_gb: number;
+}
+
+interface Remaining {
+  agents: number;
+  messages: number;
+  storage_gb: number;
+}
+
+interface PlanResponse {
+  plan: Plan;
+  usage: Usage;
+  remaining: Remaining;
+}
+
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -20,6 +54,8 @@ interface SidebarProps {
 function Sidebar({ activeTab, setActiveTab }: SidebarProps): React.ReactElement {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
+  const [planData, setPlanData] = useState<PlanResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Set initial user state
@@ -37,6 +73,34 @@ function Sidebar({ activeTab, setActiveTab }: SidebarProps): React.ReactElement 
       }
     };
   }, []);
+
+  useEffect(() => {
+    const fetchPlanData = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/plan`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch plan data');
+        }
+
+        const data = await response.json();
+        setPlanData(data);
+      } catch (error) {
+        console.error('Error fetching plan data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchPlanData();
+    }
+  }, [user]);
 
   const handleLogout = async () => {
     try {
@@ -59,6 +123,32 @@ function Sidebar({ activeTab, setActiveTab }: SidebarProps): React.ReactElement 
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const calculatePercentage = (used: number, total: number) => {
+    return Math.min(Math.round((used / total) * 100), 100);
+  };
+
+  const handleUpgrade = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(API_ENDPOINTS.SUBSCRIPTION, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ customer_email: user?.email }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert('Failed to start upgrade process.');
+      }
+    } catch (error) {
+      alert('Failed to start upgrade process.');
+    }
   };
 
   return (
@@ -87,25 +177,85 @@ function Sidebar({ activeTab, setActiveTab }: SidebarProps): React.ReactElement 
 
       <div className="p-4">
         <div className="p-4 bg-gray-50 rounded-lg">
-          <div className="space-y-3">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-500">Usage</span>
-                <span className="text-gray-900">65% of 1M msgs</span>
-              </div>
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-[#4A154B] rounded-full"
-                  style={{ width: '65%' }}
-                />
-              </div>
+          {isLoading ? (
+            <div className="animate-pulse space-y-3">
+              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              <div className="h-2 bg-gray-200 rounded-full"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
             </div>
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Pro Plan</span>
-              <span>12 days left</span>
+          ) : planData ? (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-900 mb-1">
+                  {planData.plan.name} Plan
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {planData.plan.price === 0 ? 'Free Plan' : `$${planData.plan.price}/month`}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-500">Agents</span>
+                    <span className="text-gray-900">{planData.usage.agents} / {planData.plan.limits.agents}</span>
+                  </div>
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#4A154B] rounded-full"
+                      style={{ width: `${calculatePercentage(planData.usage.agents, parseInt(planData.plan.limits.agents))}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-500">Messages</span>
+                    <span className="text-gray-900">{planData.usage.messages} / {planData.plan.limits.messages}</span>
+                  </div>
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#4A154B] rounded-full"
+                      style={{ width: `${calculatePercentage(planData.usage.messages, parseInt(planData.plan.limits.messages))}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="flex items-center space-x-2">
+                      <FileText className="w-5 h-5 text-[#4A154B]" />
+                      <span className="text-gray-500">Storage</span>
+                    </span>
+                    <span className="text-gray-900">{Math.round(planData.usage.storage_gb || 0)}GB / {planData.plan.limits.storage_gb}GB</span>
+                  </div>
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#4A154B] rounded-full"
+                      style={{ width: `${calculatePercentage(planData.usage.storage_gb, parseFloat(planData.plan.limits.storage_gb))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {planData.plan.limits.support_24_7 && (
+                <div className="mt-2 text-xs text-green-600">
+                  ✓ 24/7 Support included
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="text-sm text-red-600">
+              Failed to load plan data
+            </div>
+          )}
         </div>
+        <button
+          className="mt-4 w-full bg-[#4A154B] text-white py-2 rounded-lg font-medium hover:bg-[#611f69] transition"
+          onClick={handleUpgrade}
+        >
+          Upgrade
+        </button>
       </div>
 
       <div className="p-4 border-t border-gray-200">

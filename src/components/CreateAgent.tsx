@@ -76,6 +76,10 @@ interface SourceAuthState {
   selectedSize: number;
   selectedFileCount: number;
   isLoading?: boolean;
+  hasMore?: boolean;
+  offset?: number;
+  limit?: number;
+  nextPageToken?: string;
 }
 
 const initialSourceState: SourceAuthState = {
@@ -85,7 +89,11 @@ const initialSourceState: SourceAuthState = {
   totalSize: 0,
   selectedSize: 0,
   selectedFileCount: 0,
-  isLoading: false
+  isLoading: false,
+  hasMore: true,
+  offset: 0,
+  limit: 20,
+  nextPageToken: undefined,
 };
 
 const mockFiles = {
@@ -311,22 +319,22 @@ function formatBytes(bytes: number | undefined): string {
 
 // Calculation helpers outside the component for stability
 const calculateSelectedCount = (files: KnowledgeSourceFile[]): number => {
-  return files.reduce((acc, file) => {
+  return (Array.isArray(files) ? files : []).reduce((acc, file) => {
     if (file.selected && file.type !== 'folder') {
       acc++;
     }
-    if (file.children && file.children.length > 0) {
+    if (file.children) {
       acc += calculateSelectedCount(file.children);
     }
     return acc;
   }, 0);
 };
 const calculateSelectedSize = (files: KnowledgeSourceFile[]): number => {
-  return files.reduce((acc, file) => {
+  return (Array.isArray(files) ? files : []).reduce((acc, file) => {
     if (file.selected && file.type !== 'folder') {
       acc += Number(file.size) || 0;
     }
-    if (file.children && file.children.length > 0) {
+    if (file.children) {
       acc += calculateSelectedSize(file.children);
     }
     return acc;
@@ -357,7 +365,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     clickup: { ...initialSourceState },
     jira: { ...initialSourceState },
   });
-  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchQueries, setSearchQueries] = React.useState<Record<string, string>>({});
   const [connectedAccounts, setConnectedAccounts] = React.useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const chatContainerRef = React.useRef<HTMLDivElement>(null);
@@ -369,9 +377,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const [isLoading, setIsLoading] = React.useState(editMode);
   const navigate = useNavigate();
   const [isSending, setIsSending] = React.useState(false);
+  const [agentTypes, setAgentTypes] = React.useState<any[]>([]);
+  const [isAgentTypesLoading, setIsAgentTypesLoading] = React.useState(false);
 
-  // Use the agentId from URL params if in edit mode
-  const effectiveAgentId = editMode ? urlAgentId || initialAgentId : initialAgentId;
+  // Use the latest agentId from state, URL, or prop
+  const effectiveAgentId = agentId || urlAgentId || initialAgentId;
 
   // Load agent data when in edit mode
   React.useEffect(() => {
@@ -400,66 +410,62 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
         const agentData = await response.json();
         console.log('Agent data loaded:', agentData);
-        setAgentDetails(agentData);
+        setAgentDetails(agentData.data);
         setAgentId(effectiveAgentId);
 
         // Set basic information
         setFormData(prev => ({
           ...prev,
-          name: agentData.name || '',
-          type: agentData.type || '',
+          name: agentData.data.name || '',
+          type: agentData.data.type || '',
         }));
 
         // Handle Slack integration
-        if (agentData.slack_integration) {
+        if (agentData.data.slack_integration) {
           setIsSlackConnected(true);
           setFormData(prev => ({
             ...prev,
-            slackWorkspaceId: agentData.slack_integration.team_id || '',
+            slackWorkspaceId: agentData.data.slack_integration.team_id || '',
           }));
           await fetchSlackChannels(effectiveAgentId);
           
           // Set selected channels
-          if (agentData.slack_channels?.length > 0) {
+          if (agentData.data.slack_channels?.length > 0) {
             setFormData(prev => ({
               ...prev,
-              slackChannels: agentData.slack_channels.map((channel: any) => channel.id),
+              slackChannels: agentData.data.slack_channels.map((channel: any) => channel.id),
             }));
           }
         }
 
         // Handle knowledge sources
-        const updatedSourceState = { ...sourceState };
-        const updatedConnectedAccounts = { ...connectedAccounts };
-
+        const sourcesToFetch: string[] = [];
         knowledgeSources.forEach(source => {
           const integrationKey = source.id === 'googleDrive' ? 'google_drive_integration' : `${source.id}_integration`;
-          if (agentData[integrationKey]) {
-            updatedSourceState[source.id] = {
-              ...updatedSourceState[source.id],
-              isAuthenticated: true,
-              isConnecting: false,
-            };
-
-            if (agentData[integrationKey].account_info) {
-              updatedConnectedAccounts[source.id] = agentData[integrationKey].account_info;
+          if (agentData.data[integrationKey]) {
+            setSourceState(prev => ({
+              ...prev,
+              [source.id]: {
+                ...prev[source.id],
+                isAuthenticated: true,
+                isConnecting: false,
+              }
+            }));
+            if (agentData.data[integrationKey].account_info) {
+              setConnectedAccounts(prev => ({
+                ...prev,
+                [source.id]: agentData.data[integrationKey].account_info
+              }));
             }
+            sourcesToFetch.push(source.id);
           }
         });
-
-        setSourceState(updatedSourceState);
-        setConnectedAccounts(updatedConnectedAccounts);
-
-        // Load files for each connected source
-        for (const [sourceId, state] of Object.entries(updatedSourceState)) {
-          if (state.isAuthenticated) {
-            await fetchFilesForSource(sourceId);
-          }
-        }
+        sourcesToFetch.forEach(sourceId => fetchFilesForSource(sourceId));
       } catch (error) {
         console.error('Error loading agent data:', error);
         setError('Failed to load agent data. Please try again.');
       } finally {
+        console.info(' setIsLoading(false);');
         setIsLoading(false);
       }
     };
@@ -469,22 +475,20 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   const handleSourceAuth = async (sourceId: string) => {
     if (sourceState[sourceId].isAuthenticated) return;
-
     try {
-      if (!agentId) {
+      if (!effectiveAgentId) {
         throw new Error('Agent ID is required to connect data source');
       }
-
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
-          isConnecting: true
+          isConnecting: true,
+          isLoading: true,
         }
       }));
-
-      const url = integrationService.getIntegrationUrl(sourceId, agentId + ":" + auth.currentUser?.uid);
-      window.location.href = url;
+      const integrationUrl = integrationService.getIntegrationUrl(sourceId, effectiveAgentId + ":" + auth.currentUser?.uid);
+      window.location.href = integrationUrl;
     } catch (error) {
       console.error(`Error connecting to ${sourceId}:`, error);
       setError(`Failed to connect to ${sourceId}. Please try again.`);
@@ -492,7 +496,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
-          isConnecting: false
+          isConnecting: false,
+          isLoading: false,
         }
       }));
     }
@@ -530,12 +535,12 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
             }
 
             const agentData = await agentResponse.json();
-            setAgentDetails(agentData);
+            setAgentDetails(agentData.data);
             
             if (sourceId === 'slack') {
               setFormData(prev => ({
                 ...prev,
-                slackWorkspaceId: agentData.slack_integration?.team_id || '',
+                slackWorkspaceId: agentData.data.slack_integration?.team_id || '',
               }));
               setIsSlackConnected(true);
               await fetchSlackChannels(agentIdFromPath);
@@ -544,7 +549,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
               setCurrentStep(4);
 
               const integrationKey = sourceId === 'googleDrive' ? 'google_drive_integration' : `${sourceId}_integration`;
-              const integrationExists = agentData[integrationKey] !== undefined;
+              const integrationExists = agentData.data[integrationKey] !== undefined;
 
               setSourceState(prev => ({
                 ...prev,
@@ -556,35 +561,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
               }));
 
               if (integrationExists) {
-                const filesResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentIdFromPath}/${sourceId}/files`, {
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                });
-
-                if (!filesResponse.ok) {
-                  throw new Error(`Failed to fetch ${sourceId} files`);
-                }
-
-                const filesData = await filesResponse.json();
-                
-                setSourceState(prev => ({
-                  ...prev,
-                  [sourceId]: {
-                    ...prev[sourceId],
-                    files: filesData.files || [],
-                    totalSize: filesData.totalSize || 0,
-                    selectedSize: 0,
-                  }
-                }));
-
-                if (filesData.account_info) {
-                  setConnectedAccounts(prev => ({
-                    ...prev,
-                    [sourceId]: filesData.account_info
-                  }));
-                }
+                await fetchFilesForSource(sourceId);
               }
             }
           } catch (error) {
@@ -601,11 +578,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   React.useEffect(() => {
     const checkInitialIntegrationState = async () => {
-      if (!agentId) return;
+      if (!effectiveAgentId) return;
 
       try {
         const token = await auth.currentUser?.getIdToken();
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${effectiveAgentId}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -617,31 +594,31 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         }
 
         const agentData = await response.json();
-        setAgentDetails(agentData);
+        setAgentDetails(agentData.data);
 
         const updatedSourceState = { ...sourceState };
         const updatedConnectedAccounts = { ...connectedAccounts };
 
-        if (agentData.slack_integration) {
+        if (agentData.data.slack_integration) {
           setIsSlackConnected(true);
           setFormData(prev => ({
             ...prev,
-            slackWorkspaceId: agentData.slack_integration.team_id || ''
+            slackWorkspaceId: agentData.data.slack_integration.team_id || ''
           }));
-          await fetchSlackChannels(agentId);
+          await fetchSlackChannels(effectiveAgentId);
         }
 
         knowledgeSources.forEach(source => {
           const integrationKey = source.id === 'googleDrive' ? 'google_drive_integration' : `${source.id}_integration`;
-          if (agentData[integrationKey]) {
+          if (agentData.data[integrationKey]) {
             updatedSourceState[source.id] = {
               ...updatedSourceState[source.id],
               isAuthenticated: true,
               isConnecting: false,
             };
 
-            if (agentData[integrationKey].account_info) {
-              updatedConnectedAccounts[source.id] = agentData[integrationKey].account_info;
+            if (agentData.data[integrationKey].account_info) {
+              updatedConnectedAccounts[source.id] = agentData.data[integrationKey].account_info;
             }
           }
         });
@@ -650,7 +627,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         setConnectedAccounts(updatedConnectedAccounts);
 
         if (currentStep === 4) {
-          await fetchFilesForConnectedSources(agentId, updatedSourceState);
+          await fetchFilesForConnectedSources(effectiveAgentId, updatedSourceState);
         }
       } catch (error) {
         console.error('Error checking initial integration state:', error);
@@ -672,6 +649,13 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         const token = await auth.currentUser?.getIdToken();
         
         for (const [sourceId, state] of Object.entries(sourceState)) {
+          setSourceState(prev => ({
+            ...prev,
+            [sourceId]: {
+              ...prev[sourceId],
+              isLoading: true
+            }
+          }));
           if (state.isAuthenticated && sourceId !== 'slack') {
             const filesResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}/${sourceId}/files`, {
               headers: {
@@ -705,7 +689,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                   ...prev[sourceId],
                   files: processedFiles,
                   totalSize: totalSize,
-                  selectedSize: 0
+                  selectedSize: 0,
+                  isLoading: false
                 }
               }));
 
@@ -724,7 +709,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     };
 
     checkInitialIntegrationState();
-  }, [agentId, currentStep]);
+  }, [effectiveAgentId, currentStep]);
 
   const fetchSlackChannels = async (agentId: string) => {
     try {
@@ -796,12 +781,12 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       setIsConnectingSlack(true);
       setError(null);
       
-      if (!agentId) {
+      if (!effectiveAgentId) {
         throw new Error('Agent ID is required to connect to Slack');
       }
       
-      const url = integrationService.getIntegrationUrl('slack', agentId+":"+auth.currentUser?.uid);
-      window.location.href = url;
+      const slackIntegrationUrl = integrationService.getIntegrationUrl('slack', effectiveAgentId+":"+auth.currentUser?.uid);
+      window.location.href = slackIntegrationUrl;
     } catch (error) {
       console.error('Error connecting to Slack:', error);
       setError('Failed to connect to Slack. Please try again.');
@@ -813,6 +798,17 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
     setIsSending(true);
+
+    // Get agent ID from URL if not available in state
+    const pathParts = window.location.pathname.split('/');
+    const agentIdFromPath = pathParts[pathParts.indexOf('agents') + 1];
+    const effectiveAgentId = agentId || agentIdFromPath;
+
+    if (!effectiveAgentId) {
+      setError('Agent ID is missing. Please complete agent setup first.');
+      setIsSending(false);
+      return;
+    }
 
     // Optimistically add the user's message to the chat
     const newUserMessage: Message = { role: 'user', content: inputMessage };
@@ -829,7 +825,10 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ 
+          agent_id: effectiveAgentId,
+          messages: updatedMessages 
+        }),
       });
       if (!response.ok) {
         throw new Error('Failed to send message');
@@ -844,57 +843,67 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     }
   };
 
-  const createDraftAgent = async () => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
-      const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          type: formData.type,
-          status: 'draft',
-          configuration: {
-            channels: [],
-            workspaces: [],
-            knowledge_sources: [],
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create draft agent');
-      }
-
-      const data = await response.json();
-      setAgentId(data.agent_id);
-      return data.agent_id;
-    } catch (error) {
-      console.error('Error creating draft agent:', error);
-      setError('Failed to create draft agent. Please try again.');
-      throw error;
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleNext = async () => {
-    if (currentStep === 2 && !editMode) {
-      try {
-        await createDraftAgent();
-      } catch (error) {
+    // Step 2: After name and type selection, create draft agent if not already created
+    if (currentStep === 2 && !editMode && !agentId) {
+      if (!formData.type) {
+        setError('Type is required');
         return;
       }
+
+      try {
+        setIsSubmitting(true);
+        setError(null);
+        const token = await auth.currentUser?.getIdToken();
+        
+        // Create draft agent with name and type
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            type: formData.type,
+            status: 'draft',
+            configuration: {
+              channels: [],
+              workspaces: [],
+              knowledge_sources: [],
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          if (response.status === 403) {
+            setError('You have reached the maximum number of agents allowed in your plan');
+            setIsSubmitting(false);
+            return;
+          }
+          const data = await response.json();
+          throw new Error(data.detail || 'Failed to create draft agent');
+        }
+
+        const data = await response.json();
+        setAgentId(data.agent_id);
+        setAgentDetails(data);
+        setCurrentStep(3);
+      } catch (error) {
+        setError('Failed to create agent. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
     }
 
-    // Save name and type changes in edit mode
-    if (editMode && (currentStep === 1 || currentStep === 2)) {
+    // If we have an agentId (either from initial creation or edit mode), use PATCH to update
+    if ((currentStep === 1 || currentStep === 2) && agentId) {
       try {
+        setIsSubmitting(true);
+        setError(null);
+
+
         const token = await auth.currentUser?.getIdToken();
         const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`, {
           method: 'PATCH',
@@ -907,18 +916,18 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
             type: formData.type,
           }),
         });
-
         if (!response.ok) {
           throw new Error('Failed to update agent details');
         }
-
         // Update local state with the response
         const updatedAgent = await response.json();
         setAgentDetails(updatedAgent);
       } catch (error) {
-        console.error('Error updating agent details:', error);
+        setIsSubmitting(false);
         setError('Failed to update agent details. Please try again.');
         return;
+      } finally {
+        setIsSubmitting(false);
       }
     }
 
@@ -949,10 +958,10 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         return;
       }
     }
-
     setCurrentStep(currentStep + 1);
   };
 
+  // On final save, PATCH the agent and set status to 'active'
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSubmitting(true);
@@ -972,8 +981,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         }));
 
       const payload = {
-        name: formData.name,
-        type: formData.type,
+        name: agentDetails.name,
+        type: agentDetails.type,
         status: 'active',
         configuration: {
           channels: formData.slackChannels,
@@ -982,10 +991,14 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         },
       };
 
-      const url = editMode 
-        ? `${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`
-        : `${import.meta.env.VITE_API_BASE_URL}/agents`;
-      const method = editMode ? 'PATCH' : 'POST';
+      if (!agentId) {
+        setError('Agent ID is missing. Please complete the previous steps.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const url = `${import.meta.env.VITE_API_BASE_URL}/agents/${agentId}`;
+      const method = 'PATCH';
 
       const response = await fetch(url, {
         method,
@@ -997,25 +1010,41 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       });
 
       if (!response.ok) {
-        throw new Error(editMode ? 'Failed to update agent' : 'Failed to create agent');
+        // Try to parse and show the backend error detail
+        try {
+          const data = await response.json();
+          if (data && data.detail) {
+            setError(data.detail);
+            return;
+          }
+        } catch {}
+        throw new Error('Failed to update agent');
       }
 
       // Redirect to agents dashboard after successful save
-      navigate('/dashboard/agents');
+      navigate('/dashboard/agents', { replace: true });
 
       if (onComplete) {
         onComplete();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving agent:', error);
-      setError(editMode ? 'Failed to update agent. Please try again.' : 'Failed to create agent. Please try again.');
+      if (error && error.detail) {
+        setError(error.detail);
+      } else if (typeof error === 'string') {
+        setError(error);
+      } else if (error instanceof Error && error.message) {
+        setError(error.message);
+      } else {
+        setError('Failed to save agent. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const getSelectedFiles = (files: KnowledgeSourceFile[]): KnowledgeSourceFile[] => {
-    return files.reduce<KnowledgeSourceFile[]>((acc, file) => {
+    return (Array.isArray(files) ? files : []).reduce<KnowledgeSourceFile[]>((acc, file) => {
       if (file.selected && file.type !== 'folder') {
         acc.push(file);
       }
@@ -1029,8 +1058,12 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
-    } else if (onBack) {
-      onBack();
+    } else {
+      if (onBack) {
+        onBack();
+      } else {
+        navigate('/dashboard/agents', { replace: true });
+      }
     }
   };
 
@@ -1059,7 +1092,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   };
 
   const filterFiles = (files: KnowledgeSourceFile[], query: string): KnowledgeSourceFile[] => {
-    if (!query) return files;
+    if (!query) return Array.isArray(files) ? files : [];
     
     const lowerQuery = query.toLowerCase();
     
@@ -1135,7 +1168,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     return (
       <div className="mt-2">
         <Listbox 
-          value={source.files.filter(f => f.selected)} 
+          value={(Array.isArray(source.files) ? source.files : []).filter(f => f.selected)} 
           onChange={(selectedFiles) => {
             const updatedFiles = source.files.map(file => ({
               ...file,
@@ -1154,14 +1187,14 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           <div className="relative mt-1">
             <Listbox.Button className="relative w-full cursor-default rounded-lg bg-white py-2 pl-3 pr-10 text-left border focus:outline-none focus-visible:border-[#4A154B] focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75 focus-visible:ring-offset-2 focus-visible:ring-offset-[#4A154B] sm:text-sm">
               <span className="block truncate">
-                {source.files.filter(f => f.selected).length} files selected
+                {(Array.isArray(source.files) ? source.files : []).filter(f => f.selected).length} files selected
               </span>
               <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
                 <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden="true" />
               </span>
             </Listbox.Button>
             <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-              {source.files.map((file) => renderFile(file, sourceId))}
+              {(Array.isArray(source.files) ? source.files : []).map((file) => renderFile(file, sourceId))}
             </Listbox.Options>
           </div>
         </Listbox>
@@ -1312,24 +1345,29 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
 
   const renderAgentTypes = () => (
     <div className="grid grid-cols-1 gap-4 max-w-3xl">
-      {agentTypes.map((type) => (
-        <button
-          key={type.id}
-          type="button"
-          onClick={() => {
-            setFormData({ ...formData, type: type.id });
-            handleNext();
-          }}
-          className={`w-full p-6 text-left rounded-lg border transition-colors ${
-            formData.type === type.id
-              ? 'border-[#4A154B] bg-[#4A154B]/5'
-              : 'border-gray-200 hover:border-[#4A154B] hover:bg-gray-50'
-          }`}
-        >
-          <h3 className="text-lg font-medium text-gray-900">{type.name}</h3>
-          <p className="text-sm text-gray-500 mt-2">{type.description}</p>
-        </button>
-      ))}
+      {isAgentTypesLoading ? (
+        <div className="text-center text-gray-500">Loading agent types...</div>
+      ) : agentTypes.length === 0 ? (
+        <div className="text-center text-gray-500">No agent types found.</div>
+      ) : (
+        agentTypes.map((type) => (
+          <button
+            key={type.id}
+            type="button"
+            onClick={() => {
+              setFormData(prev => ({ ...prev, type: type.id }));
+            }}
+            className={`w-full p-6 text-left rounded-lg border transition-colors ${
+              formData.type === type.id
+                ? 'border-[#4A154B] bg-[#4A154B]/5'
+                : 'border-gray-200 hover:border-[#4A154B] hover:bg-gray-50'
+            }`}
+          >
+            <h3 className="text-lg font-medium text-gray-900">{type.name}</h3>
+            <p className="text-sm text-gray-500 mt-2">{type.description}</p>
+          </button>
+        ))
+      )}
     </div>
   );
 
@@ -1363,7 +1401,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
               
               {sourceState[source.id].isAuthenticated ? (
                 <div className="flex items-center space-x-2">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     <Check className="w-4 h-4 mr-1" />
                     Connected
                   </span>
@@ -1420,8 +1458,11 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                       <input
                         type="text"
                         placeholder={`Search ${source.name} documents...`}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        value={searchQueries[source.id] || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSearchQueries(prev => ({ ...prev, [source.id]: value }));
+                        }}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4A154B] focus:border-transparent"
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -1433,61 +1474,67 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                       </div>
                     )}
 
-                    <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto">
+                    <div className="bg-white rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto" onScroll={e => handleFilesScroll(e, source.id)}>
                       <div className="p-4">
-                        <div className="space-y-2">
-                          {filterFiles(sourceState[source.id].files, searchQuery).map(file => (
-                            <div
-                              key={file.id}
-                              className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
-                              onClick={() => toggleFile(source.id, file.id, sourceState, setSourceState)}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={file.selected || false}
-                                onChange={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  toggleFile(source.id, file.id, sourceState, setSourceState);
-                                }}
-                                className="h-4 w-4 text-[#4A154B] border-gray-300 rounded focus:ring-[#4A154B]"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {file.name}
-                                </p>
-                                {file.type !== 'folder' && (
-                                  <p className="text-xs text-gray-500">
-                                    {formatBytes(file.size)}
-                                  </p>
-                                )}
-                              </div>
-                              {file.selected && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                  Saved
-                                </span>
-                              )}
-                              {file.children && (
-                                <button
-                                  onClick={(e) => {
+                        {(() => { console.log('RENDER:', source.id, sourceState[source.id]?.isLoading, sourceState[source.id]?.files?.length); return null; })()}
+                        {sourceState[source.id].isLoading ? (
+                          <div className="flex flex-col items-center justify-center space-y-2 py-8">
+                            <Loader2 className="w-8 h-8 animate-spin text-[#4A154B]" />
+                            <p className="text-sm text-gray-500">Loading files...</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {(Array.isArray(sourceState[source.id].files) ? filterFiles(sourceState[source.id].files, searchQueries[source.id] || '') : []).map(file => (
+                              <div
+                                key={file.id}
+                                className={`flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer ${sourceState[source.id].isLoading ? 'opacity-50 pointer-events-none' : ''}`}
+                                onClick={() => !sourceState[source.id].isLoading && toggleFile(source.id, file.id, sourceState, setSourceState)}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={file.selected || false}
+                                  disabled={sourceState[source.id].isLoading}
+                                  onChange={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    toggleExpand(source.id, file.id);
+                                    if (!sourceState[source.id].isLoading) toggleFile(source.id, file.id, sourceState, setSourceState);
                                   }}
-                                  className="p-1 hover:bg-gray-100 rounded"
-                                >
-                                  {file.expanded ? (
-                                    <ChevronDown className="h-4 w-4 text-gray-500" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4 text-gray-500" />
+                                  className="h-4 w-4 text-[#4A154B] border-gray-300 rounded focus:ring-[#4A154B]"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {file.name}
+                                  </p>
+                                  {file.type !== 'folder' && (
+                                    <p className="text-xs text-gray-500">
+                                      {formatBytes(file.size)}
+                                    </p>
                                   )}
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                                </div>
+                                {file.selected && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    Saved
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
+
+                    {!sourceState[source.id].isLoading && sourceState[source.id].hasMore && (
+                      <div className="flex justify-center py-2">
+                        <button
+                          type="button"
+                          onClick={() => fetchFilesForSource(source.id, true, searchQueries[source.id] || '')}
+                          className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
+                          disabled={sourceState[source.id].isLoading}
+                        >
+                          Load More
+                        </button>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">
@@ -1558,19 +1605,23 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       )}
 
       <div className="flex justify-between pt-6">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-        >
-          Back
-        </button>
+        {currentStep !== 4 && currentStep !== 5 && (
+          <button
+            type="button"
+            onClick={handleBack}
+            className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Back
+          </button>
+        )}
         <button
           type="button"
           onClick={handleNext}
-          disabled={!Object.values(sourceState).some(state => 
-            state.isAuthenticated && state.selectedSize > 0
-          )}
+          disabled={
+            (currentStep === 1 && !formData.name) ||
+            (currentStep === 2 && !formData.type) ||
+            (currentStep === 3 && (!isSlackConnected || formData.slackChannels.length === 0))
+          }
           className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Continue
@@ -1640,7 +1691,7 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
   };
 
   const calculateFileCount = (files: KnowledgeSourceFile[]): number => {
-    return files.reduce((acc, file) => {
+    return (Array.isArray(files) ? files : []).reduce((acc: number, file: KnowledgeSourceFile) => {
       if (file.children) {
         return acc + calculateFileCount(file.children);
       }
@@ -1696,52 +1747,55 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
     }
   };
 
-  const fetchFilesForSource = async (sourceId: string) => {
+  const fetchFilesForSource = async (sourceId: string, append = false, searchQueryParam?: string) => {
     try {
       if (!effectiveAgentId) {
         throw new Error('Agent ID is required to fetch files');
       }
-
-      // Set loading state for this source
+      const source = sourceState[sourceId];
+      const offset = append ? (source.offset || 0) : 0;
+      const limit = source.limit || 20;
+      const nextPageToken = append ? source.nextPageToken : undefined;
+      const query = typeof searchQueryParam === 'string' ? searchQueryParam : searchQueries[sourceId] || '';
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
           isLoading: true,
-          files: [],
-          totalSize: 0,
-          selectedSize: 0,
-          selectedFileCount: 0
         }
       }));
-
+      console.log('[fetchFilesForSource] isLoading set to true for', sourceId);
       const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${effectiveAgentId}/${sourceId}/files`, {
+      let url = `${import.meta.env.VITE_API_BASE_URL}/agents/${effectiveAgentId}/${sourceId}/files?limit=${limit}`;
+      if (sourceId === 'googleDrive' && nextPageToken) {
+        url += `&page_token=${encodeURIComponent(nextPageToken)}`;
+      } else if (nextPageToken) {
+        url += `&page_token=${encodeURIComponent(nextPageToken)}`;
+      } else if (append) {
+        url += `&offset=${offset}`;
+      }
+      if (query) {
+        url += `&search_query=${encodeURIComponent(query)}`;
+      }
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
-
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error(`No files found for ${sourceId}`);
         }
         throw new Error('Failed to fetch files');
       }
-
       const data = await response.json();
-      
-      // Get the list of previously selected files from agent details
+       
       const previouslySelectedFiles = editMode && agentDetails?.configuration?.knowledge_sources
         ?.find((source: any) => source.type === sourceId)?.files || [];
-
-      // Create a map of previously selected files for quick lookup
       const selectedFilesMap = new Map(
         previouslySelectedFiles.map((file: any) => [file.id, file])
       );
-
-      // Process files and mark previously selected ones
       const processedFiles = (data.files || []).map((file: KnowledgeSourceFile) => {
         const isSelected = selectedFilesMap.has(file.id);
         return {
@@ -1759,24 +1813,28 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
           }) : undefined,
         };
       });
-
-      // Always calculate selected count and size recursively
-      const selectedFileCount = calculateSelectedCount(processedFiles);
-      const selectedSize = calculateSelectedSize(processedFiles);
+      const allFiles = append ? [...source.files, ...processedFiles] : processedFiles;
+      const selectedFileCount = calculateSelectedCount(allFiles);
+      const selectedSize = calculateSelectedSize(allFiles);
       const totalSize = data.total_size || 0;
-      
+      const newNextPageToken = data.nextPageToken || data.next_page_token;
+      const hasMore = !!newNextPageToken || (data.pagination && (data.pagination.offset + data.pagination.limit < data.pagination.total));
       setSourceState(prev => ({
         ...prev,
         [sourceId]: {
           ...prev[sourceId],
-          files: processedFiles,
+          files: allFiles,
           totalSize: totalSize,
           selectedSize: selectedSize,
           selectedFileCount: selectedFileCount,
-          isLoading: false
+          isLoading: false,
+          hasMore: hasMore,
+          offset: append ? (offset + limit) : limit,
+          nextPageToken: newNextPageToken,
         }
       }));
-
+      console.log('[fetchFilesForSource] Files loaded for', sourceId, 'isLoading set to false, files:', allFiles.length);
+     
       if (data.account_info) {
         setConnectedAccounts(prev => ({
           ...prev,
@@ -1789,14 +1847,8 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
         ...prev, 
         [sourceId]: `Failed to fetch files: ${error instanceof Error ? error.message : 'Unknown error'}` 
       }));
-      // Reset loading state on error
-      setSourceState(prev => ({
-        ...prev,
-        [sourceId]: {
-          ...prev[sourceId],
-          isLoading: false
-        }
-      }));
+   
+      console.log('[fetchFilesForSource] Error for', sourceId, 'isLoading set to false');
     }
   };
 
@@ -1822,6 +1874,61 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
       }
     });
   }, [sourceState]);
+
+  React.useEffect(() => {
+    if (currentStep === 2) {
+      setIsAgentTypesLoading(true);
+      (async () => {
+        try {
+          const token = await auth.currentUser?.getIdToken();
+          const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agent-types`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await response.json();
+          const types = Array.isArray(data.agent_types) ? data.agent_types : [];
+          setAgentTypes(types);
+
+          // In edit mode, ensure the current type is selected if not already
+          if (editMode && agentDetails && agentDetails.type) {
+            setFormData(prev => ({ ...prev, type: agentDetails.type }));
+          }
+        } catch (e) {
+          console.error('Error loading agent types:', e);
+          setAgentTypes([]);
+        } finally {
+          setIsAgentTypesLoading(false);
+        }
+      })();
+    }
+  }, [currentStep, editMode, agentDetails]);
+
+  // Debug log for form data changes
+  React.useEffect(() => {
+    console.log('Form data updated:', formData);
+  }, [formData]);
+
+  // Add navigation guard for sidebar Agents link
+  React.useEffect(() => {
+    const handleSidebarClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('a[href="/dashboard/agents"]')) {
+        e.preventDefault();
+        navigate('/dashboard/agents', { replace: true });
+      }
+    };
+    document.addEventListener('click', handleSidebarClick);
+    return () => document.removeEventListener('click', handleSidebarClick);
+  }, [navigate]);
+
+  // Comment out auto-pagination on scroll for files list
+  const handleFilesScroll = (e: React.UIEvent<HTMLDivElement>, sourceId: string) => {
+    // const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    // const source = sourceState[sourceId];
+    // if (!source.isLoading && source.hasMore && scrollTop + clientHeight >= scrollHeight - 40) {
+    //   fetchFilesForSource(sourceId, true, searchQueries[sourceId] || '');
+    // }
+    // Auto-pagination on scroll is disabled for now.
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center relative">
@@ -1875,13 +1982,21 @@ function CreateAgent({ isOnboarding = false, onComplete, onBack, editMode = fals
                 <div>{renderStep()}</div>
                 {currentStep !== 4 && currentStep !== 5 && (
                   <div className="flex justify-end pt-6">
-                    {(currentStep > 1 || !isOnboarding) && (
+                    {currentStep === 1 ? (
                       <button
                         type="button"
                         onClick={handleBack}
                         className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
-                        {currentStep === 1 && !isOnboarding ? 'Cancel' : 'Back'}
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Back
                       </button>
                     )}
                     <button

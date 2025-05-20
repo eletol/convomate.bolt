@@ -24,7 +24,7 @@ export const OAUTH_CONFIG = {
   SLACK: {
     CLIENT_ID: import.meta.env.VITE_SLACK_CLIENT_ID || '8812068083172.8811775174739',
     REDIRECT_URI: `${API_BASE_URL}/slack/oauth/callback`,
-    SCOPES: 'app_mentions:read,chat:write,commands,users:read,channels:history,groups:history,im:history,mpim:history'
+    SCOPES: 'app_mentions:read,chat:write,commands,users:read,channels:history,groups:history,im:history,mpim:history,channels:read,groups:read,im:read,mpim:read'
   },
   GOOGLE: {
     CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID || '151006307201-v8s4jreb6oqbu4447nvog89iljnca4j8.apps.googleusercontent.com',
@@ -32,7 +32,7 @@ export const OAUTH_CONFIG = {
     SCOPES: 'https://www.googleapis.com/auth/drive.readonly'
   },
   NOTION: {
-    CLIENT_ID: import.meta.env.VITE_NOTION_CLIENT_ID || '1e2d872b-594c-8087-bedc-003787c48c90',
+    CLIENT_ID: import.meta.env.VITE_NOTION_CLIENT_ID || '1f7d872b-594c-80fe-8da5-0037bca4f26f',
     REDIRECT_URI: `${API_BASE_URL}/notion/oauth/callback`
   },
   JIRA: {

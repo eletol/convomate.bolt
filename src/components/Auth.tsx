@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bot, Mail, Lock, Slack, ArrowRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { FcGoogle } from 'react-icons/fc';
 import { authService } from '../services/auth';
 import { useNavigate } from 'react-router-dom';
 
@@ -89,7 +90,7 @@ function Auth({ onComplete }: AuthProps) {
       onComplete(isSignUp);
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to authenticate with Slack');
+      setError(err instanceof Error ? err.message : 'Failed to authenticate with Google');
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +109,7 @@ function Auth({ onComplete }: AuthProps) {
             Verify your email
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            We've sent a verification code to<br />
+            We've sent a verification email to<br />
             <span className="font-medium text-[#4A154B]">{email}</span>
           </p>
         </div>
@@ -124,26 +125,27 @@ function Auth({ onComplete }: AuthProps) {
                 <p className="mt-1 text-sm text-gray-500">Redirecting you to your dashboard...</p>
               </div>
             ) : (
-              <form className="space-y-6" onSubmit={handleVerifyEmail}>
-                <div>
-                  <label htmlFor="code" className="block text-sm font-medium text-gray-700">
-                    Verification Code
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      id="code"
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value)}
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#4A154B] focus:border-[#4A154B] sm:text-sm"
-                      placeholder="Enter 6-digit code"
-                      disabled={isLoading}
-                    />
-                  </div>
-                </div>
-
+              <div className="text-center">
+                <p className="text-sm text-gray-700 mb-4">
+                  Please check your email for the verification link to complete your registration.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={isResending || isLoading}
+                  className="inline-flex items-center justify-center px-4 py-2 border border-[#4A154B] rounded-md shadow-sm text-sm font-medium text-[#4A154B] bg-white hover:bg-[#4A154B]/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isResending ? (
+                    <span className="flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Resending...
+                    </span>
+                  ) : (
+                    'Resend Email'
+                  )}
+                </button>
                 {error && (
-                  <div className="rounded-md bg-red-50 p-4">
+                  <div className="rounded-md bg-red-50 p-4 mt-4">
                     <div className="flex">
                       <div className="flex-shrink-0">
                         <AlertCircle className="h-5 w-5 text-red-400" />
@@ -154,39 +156,7 @@ function Auth({ onComplete }: AuthProps) {
                     </div>
                   </div>
                 )}
-
-                <div>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#4A154B] hover:bg-[#611f69] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#4A154B] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      'Verify Email'
-                    )}
-                  </button>
-                </div>
-
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={handleResendVerification}
-                    disabled={isResending || isLoading}
-                    className="text-sm text-[#4A154B] hover:text-[#611f69] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isResending ? (
-                      <span className="flex items-center justify-center">
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Resending...
-                      </span>
-                    ) : (
-                      "Didn't receive the code? Resend"
-                    )}
-                  </button>
-                </div>
-              </form>
+              </div>
             )}
           </div>
         </div>
@@ -221,8 +191,8 @@ function Auth({ onComplete }: AuthProps) {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <>
-                <Slack className="w-5 h-5 mr-2" />
-                {isSignUp ? 'Sign up with Slack' : 'Sign in with Slack'}
+                <FcGoogle className="w-5 h-5 mr-2" />
+                {isSignUp ? 'Sign up with Google' : 'Sign in with Google'}
               </>
             )}
           </button>

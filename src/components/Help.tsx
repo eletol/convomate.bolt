@@ -2,13 +2,13 @@ import React from 'react';
 import { BookOpen, MessageSquare, Mail, Map as RoadMap } from 'lucide-react';
 
 const helpResources = [
-  {
-    name: 'Knowledge Base',
-    description: 'Browse through our comprehensive guides and documentation.',
-    icon: BookOpen,
-    link: '#',
-    color: 'bg-blue-100 text-blue-700'
-  },
+  // {
+  //   name: 'Knowledge Base',
+  //   description: 'Browse through our comprehensive guides and documentation.',
+  //   icon: BookOpen,
+  //   link: '#',
+  //   color: 'bg-blue-100 text-blue-700'
+  // },
   {
     name: 'Chat with Support',
     description: 'Get real-time help from our support team.',
@@ -23,13 +23,13 @@ const helpResources = [
     link: '#',
     color: 'bg-purple-100 text-purple-700'
   },
-  {
-    name: 'Product Roadmap',
-    description: 'See what features are coming next.',
-    icon: RoadMap,
-    link: '#',
-    color: 'bg-orange-100 text-orange-700'
-  }
+  // {
+  //   name: 'Product Roadmap',
+  //   description: 'See what features are coming next.',
+  //   icon: RoadMap,
+  //   link: '#',
+  //   color: 'bg-orange-100 text-orange-700'
+  // }
 ];
 
 function Help(): React.ReactElement {
@@ -71,9 +71,9 @@ function Help(): React.ReactElement {
           <button className="px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]">
             Contact Support
           </button>
-          <button className="px-4 py-2 text-sm font-medium text-[#4A154B] bg-white border border-[#4A154B] rounded-lg hover:bg-[#4A154B]/5">
+          {/* <button className="px-4 py-2 text-sm font-medium text-[#4A154B] bg-white border border-[#4A154B] rounded-lg hover:bg-[#4A154B]/5">
             View Documentation
-          </button>
+          </button> */}
         </div>
       </div>
     </div>

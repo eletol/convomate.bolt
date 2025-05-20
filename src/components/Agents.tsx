@@ -5,6 +5,9 @@ import CreateAgent from './CreateAgent';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../config/firebase';
 import { API_BASE_URL } from '../config/constants';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+dayjs.extend(relativeTime);
 
 interface Agent {
   agent_id: string;
@@ -13,8 +16,10 @@ interface Agent {
   status: string;
   created_at: string;
   last_activity?: string;
-  messages_answered?: number;
+  last_active_at?: string;
+  questions_count?: number;
   channels?: string[];
+  slack_channels?: { id: string; name: string }[];
 }
 
 function EmptyState({ onCreateAgent, isSearchResult = false }: { 
@@ -54,11 +59,13 @@ interface AgentCardProps {
   onShowActions: (event: React.MouseEvent<HTMLButtonElement>) => void;
   showActions: boolean;
   onStatusUpdate: (agentId: string, newStatus: string) => Promise<void>;
+  onDeleteClick: (agent: Agent) => void;
 }
 
-function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate }: AgentCardProps) {
+function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate, onDeleteClick }: AgentCardProps) {
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = React.useState(false);
+  const [isDuplicating, setIsDuplicating] = React.useState(false);
 
   const handleToggleStatus = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -73,6 +80,38 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
       setIsUpdating(false);
     }
   };
+
+  const handleDuplicate = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDuplicating(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agent.agent_id}/duplicate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to duplicate agent');
+      }
+      window.location.reload(); // Reload agents list after duplication
+    } catch (error) {
+      alert('Failed to duplicate agent. Please try again.');
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  // Helper to determine if agent was active recently (within 24 hours)
+  const showActiveRecently = agent.last_active_at && dayjs().diff(dayjs(agent.last_active_at), 'hour') < 24;
+  const lastActiveLabel = agent.last_active_at
+    ? `Active ${dayjs(agent.last_active_at).fromNow()}`
+    : showActiveRecently
+      ? 'Active Recently'
+      : '';
 
   return (
     <div 
@@ -104,10 +143,16 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
               >
                 <div className="py-1">
                   <button
-                    className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 w-full text-left min-h-[44px]"
+                    onClick={handleDuplicate}
+                    disabled={isDuplicating}
+                    className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 w-full text-left min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                     role="menuitem"
                   >
-                    <Copy className="w-4 h-4 mr-3" />
+                    {isDuplicating ? (
+                      <Loader2 className="w-4 h-4 mr-3 animate-spin" />
+                    ) : (
+                      <Copy className="w-4 h-4 mr-3" />
+                    )}
                     Duplicate
                   </button>
                   <button
@@ -124,6 +169,7 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
                     {agent.status === 'active' ? 'Disable' : 'Enable'}
                   </button>
                   <button
+                    onClick={() => onDeleteClick(agent)}
                     className="flex items-center px-4 py-3 text-sm text-red-600 hover:bg-gray-100 w-full text-left min-h-[44px]"
                     role="menuitem"
                   >
@@ -144,9 +190,11 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
           <h3 className="font-medium text-gray-900 group-hover:text-[#4A154B] truncate">
             {agent.name}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Active {agent.last_activity || 'Recently'}
-          </p>
+          {agent.last_active_at && showActiveRecently && (
+            <p className="text-sm text-gray-500 mt-1">
+              Active {dayjs(agent.last_active_at).fromNow()}
+            </p>
+          )}
         </button>
         
         <div className="mt-4 space-y-4">
@@ -160,11 +208,11 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
             </span>
             <div className="flex items-center">
               <MessageSquare className="w-4 h-4 text-[#4A154B] mr-1" />
-              <p className="text-sm font-medium text-gray-900">{agent.messages_answered || 0}</p>
+              <p className="text-sm font-medium text-gray-900">{agent.questions_count || 0}</p>
             </div>
           </div>
 
-          {agent.channels && agent.channels.length > 0 && (
+          {Array.isArray(agent.slack_channels) && agent.slack_channels.length > 0 && (
             <div>
               <p className="text-sm text-gray-500 mb-2">Connected Channels</p>
               <div className="flex flex-wrap gap-2">
@@ -173,12 +221,12 @@ function AgentCard({ agent, onSelect, onShowActions, showActions, onStatusUpdate
                     <Loader2 className="w-4 h-4 text-[#4A154B] animate-spin" />
                   </div>
                 ) : (
-                  agent.channels.map((channel) => (
+                  agent.slack_channels.map((channel) => (
                     <span
-                      key={channel}
+                      key={channel.id}
                       className="px-2 py-1 bg-[#4A154B]/10 text-[#4A154B] rounded-full text-xs"
                     >
-                      {channel}
+                      {channel.name}
                     </span>
                   ))
                 )}
@@ -245,59 +293,60 @@ function Agents(): React.ReactElement {
   const [selectedAgent, setSelectedAgent] = React.useState<string | null>(null);
   const [isCreating, setIsCreating] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('');
   const [currentPage, setCurrentPage] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const [agents, setAgents] = React.useState<Agent[]>([]);
+  const [totalAgents, setTotalAgents] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
-  const [lastFetchTime, setLastFetchTime] = React.useState<number>(0);
-  const itemsPerPage = 9;
-  const CACHE_DURATION = 30000; // 30 seconds cache
+  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
+  const [agentToDelete, setAgentToDelete] = React.useState<Agent | null>(null);
+  const itemsPerPage = 10;
 
-  // Debounce search query
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  // Fetch agents with caching
-  const fetchAgents = React.useCallback(async (force = false) => {
-    const now = Date.now();
-    if (!force && now - lastFetchTime < CACHE_DURATION) {
-      return; // Use cached data if within cache duration
-    }
-
+  // Fetch agents from server with pagination and search
+  const fetchAgents = React.useCallback(async () => {
     setIsLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents`, {
+      const params = new URLSearchParams({
+        limit: itemsPerPage.toString(),
+        offset: ((currentPage - 1) * itemsPerPage).toString(),
+      });
+      if (searchQuery) params.append('search', searchQuery);
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
-
       if (!response.ok) {
         throw new Error('Failed to fetch agents');
       }
-
       const data = await response.json();
-      setAgents(data);
-      setLastFetchTime(now);
+      setAgents(Array.isArray(data.data) ? data.data : []);
+      setTotalAgents(data.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching agents:', error);
       setError('Failed to load agents. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentPage, searchQuery]);
 
-  // Initial fetch only
   React.useEffect(() => {
-    fetchAgents(true);
-  }, []);
+    fetchAgents();
+  }, [fetchAgents]);
+
+  // Server-side search
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+    setCurrentPage(1); // Reset to first page on new search
+  };
+
+  // Pagination
+  const totalPages = Math.ceil(totalAgents / itemsPerPage);
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    setShowActions(null);
+  };
 
   // Optimize agent status update
   const updateAgentStatus = React.useCallback(async (agentId: string, newStatus: string) => {
@@ -333,27 +382,6 @@ function Agents(): React.ReactElement {
     }
   }, [navigate]);
 
-  // Memoize filtered agents based on debounced search query
-  const filteredAgents = React.useMemo(() => {
-    if (!debouncedSearchQuery) return agents;
-    
-    const query = debouncedSearchQuery.toLowerCase();
-    return agents.filter(agent => 
-      agent.name.toLowerCase().includes(query) ||
-      agent.type.toLowerCase().includes(query) ||
-      (agent.channels && agent.channels.some(channel => channel.toLowerCase().includes(query)))
-    );
-  }, [agents, debouncedSearchQuery]);
-
-  const totalPages = Math.ceil(filteredAgents.length / itemsPerPage);
-  const paginatedAgents = React.useMemo(() => 
-    filteredAgents.slice(
-      (currentPage - 1) * itemsPerPage,
-      currentPage * itemsPerPage
-    ),
-    [filteredAgents, currentPage, itemsPerPage]
-  );
-
   // Close actions menu when clicking outside
   React.useEffect(() => {
     const handleClickOutside = () => setShowActions(null);
@@ -362,12 +390,7 @@ function Agents(): React.ReactElement {
   }, []);
 
   const handleCreateAgent = () => {
-    setIsCreating(true);
-  };
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-    setShowActions(null);
+    navigate('/dashboard/agents/create');
   };
 
   const handleShowActions = (agentId: string, event: React.MouseEvent<HTMLButtonElement>) => {
@@ -380,7 +403,8 @@ function Agents(): React.ReactElement {
   }
 
   if (selectedAgent !== null) {
-    return <AgentDetail agentId={selectedAgent} onClose={() => setSelectedAgent(null)} />;
+    navigate(`/dashboard/agents/${selectedAgent}/edit`);
+    return <></>;
   }
 
   if (error) {
@@ -388,7 +412,7 @@ function Agents(): React.ReactElement {
       <div className="text-center text-red-600">
         <p>{error}</p>
         <button
-          onClick={() => fetchAgents(true)}
+          onClick={() => fetchAgents()}
           className="mt-4 px-4 py-2 text-sm font-medium text-white bg-[#4A154B] rounded-lg hover:bg-[#611f69]"
         >
           Try Again
@@ -420,7 +444,7 @@ function Agents(): React.ReactElement {
             type="text"
             placeholder="Search agents..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4A154B] focus:border-transparent"
           />
           {searchQuery && (
@@ -441,12 +465,12 @@ function Agents(): React.ReactElement {
             <p className="text-gray-500">Loading agents...</p>
           </div>
         </div>
-      ) : agents.length === 0 ? (
+      ) : !Array.isArray(agents) || agents.length === 0 ? (
         <EmptyState onCreateAgent={handleCreateAgent} />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {paginatedAgents.map((agent) => (
+            {agents.map((agent) => (
               <AgentCard
                 key={agent.agent_id}
                 agent={agent}
@@ -454,6 +478,10 @@ function Agents(): React.ReactElement {
                 onShowActions={(e) => handleShowActions(agent.agent_id, e)}
                 showActions={showActions === agent.agent_id}
                 onStatusUpdate={updateAgentStatus}
+                onDeleteClick={(agent) => {
+                  setAgentToDelete(agent);
+                  setDeleteModalOpen(true);
+                }}
               />
             ))}
           </div>
@@ -463,6 +491,44 @@ function Agents(): React.ReactElement {
             onPageChange={handlePageChange}
           />
         </>
+      )}
+
+      {/* Modal for delete confirmation */}
+      {deleteModalOpen && agentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg p-6 shadow-lg max-w-sm w-full">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Delete Agent</h2>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete <span className="font-bold">{agentToDelete.name}</span>? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const token = await auth.currentUser?.getIdToken();
+                    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/agents/${agentToDelete.agent_id}`, {
+                      method: 'DELETE',
+                      headers: { 'Authorization': `Bearer ${token}` },
+                    });
+                    if (!response.ok) throw new Error('Failed to delete agent');
+                    window.location.reload();
+                  } catch {
+                    alert('Failed to delete agent. Please try again.');
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

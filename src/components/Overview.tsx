@@ -1,59 +1,32 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bot, MessageSquare, Users2, Clock, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
 import { useSpring, animated, config } from '@react-spring/web';
+import { auth } from '../config/firebase';
+import { useNavigate } from 'react-router-dom';
 
-const stats = [
-  { 
-    name: 'Total Agents',
-    value: 12,
-    change: '+2',
-    trend: 'up',
-    icon: Bot,
-    description: 'Active agents across all channels'
-  },
-  { 
-    name: 'Messages Answered',
-    value: 2847,
-    change: '+147',
-    trend: 'up',
-    icon: MessageSquare,
-    description: 'Total messages handled this month'
-  },
-  { 
-    name: 'Users Helped',
-    value: 892,
-    change: '+89',
-    trend: 'up',
-    icon: Users2,
-    description: 'Unique users assisted this month'
-  },
-  { 
-    name: 'Time Saved',
-    value: 478,
-    change: '+24',
-    trend: 'up',
-    icon: Clock,
-    description: 'Estimated time saved this month'
-  },
-];
-
-const usageData = [
-  { date: '2024-03-01', messages: 120 },
-  { date: '2024-03-02', messages: 145 },
-  { date: '2024-03-03', messages: 132 },
-  { date: '2024-03-04', messages: 167 },
-  { date: '2024-03-05', messages: 178 },
-  { date: '2024-03-06', messages: 189 },
-  { date: '2024-03-07', messages: 156 },
-  { date: '2024-03-08', messages: 198 },
-  { date: '2024-03-09', messages: 167 },
-  { date: '2024-03-10', messages: 142 },
-  { date: '2024-03-11', messages: 189 },
-  { date: '2024-03-12', messages: 203 },
-  { date: '2024-03-13', messages: 212 },
-  { date: '2024-03-14', messages: 228 },
-  { date: '2024-03-15', messages: 221 },
-];
+interface OverviewData {
+  total_agents: number;
+  total_agents_increased: number;
+  messages_answered: number;
+  messages_answered_increased: number;
+  users_helped: number;
+  users_helped_increased: number;
+  usage_trends: Record<string, number>;
+  usage_trends_increased_percentage: number;
+  top_agents: {
+    agent_id: string;
+    name: string;
+    message_count: number;
+    accuracy: number;
+  }[];
+  response_quality: {
+    helpful: number;
+    neutral: number;
+    unhelpful: number;
+  };
+  time_saved: string;
+  time_saved_increased: string;
+}
 
 function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string }) {
   const { number } = useSpring({
@@ -72,23 +45,118 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
 
 function AnimatedBar({ height, delay }: { height: number; delay: number }) {
   const props = useSpring({
-    from: { height: '0%' },
-    to: { height: `${height}%` },
+    from: { height: '0px' },
+    to: { height: `${height}px` },
     delay,
     config: config.gentle,
   });
 
   return (
     <animated.div
-      className="absolute bottom-0 left-1 right-1 bg-[#4A154B] rounded-t"
+      className="absolute bottom-0 left-0 right-0 bg-[#4A154B] rounded-t shadow-lg mx-1"
       style={props}
     />
   );
 }
 
 function Overview() {
+  const [data, setData] = useState<OverviewData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/dashboard/overview`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch dashboard data');
+        }
+
+        const overviewData = await response.json();
+        setData(overviewData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#4A154B]"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-600">
+        <p>{error}</p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const stats = [
+    { 
+      name: 'Total Agents',
+      value: data.total_agents,
+      change: data.total_agents_increased > 0 ? `+${data.total_agents_increased}` : `${data.total_agents_increased}`,
+      trend: data.total_agents_increased >= 0 ? 'up' : 'down',
+      icon: Bot,
+      description: 'Active agents across all channels'
+    },
+    { 
+      name: 'Messages Answered',
+      value: data.messages_answered,
+      change: data.messages_answered_increased > 0 ? `+${data.messages_answered_increased}` : `${data.messages_answered_increased}`,
+      trend: data.messages_answered_increased >= 0 ? 'up' : 'down',
+      icon: MessageSquare,
+      description: 'Total messages handled this month'
+    },
+    { 
+      name: 'Users Helped',
+      value: data.users_helped,
+      change: data.users_helped_increased > 0 ? `+${data.users_helped_increased}` : `${data.users_helped_increased}`,
+      trend: data.users_helped_increased >= 0 ? 'up' : 'down',
+      icon: Users2,
+      description: 'Unique users assisted this month'
+    },
+    { 
+      name: 'Time Saved',
+      value: parseInt(data.time_saved),
+      change: data.time_saved_increased,
+      trend: parseInt(data.time_saved_increased) >= 0 ? 'up' : 'down',
+      icon: Clock,
+      description: 'Estimated time saved this month'
+    },
+  ];
+
+  const usageData = Object.entries(data.usage_trends).map(([date, messages]) => ({
+    date,
+    messages
+  }));
+
   const maxMessages = Math.max(...usageData.map(d => d.messages));
   const minMessages = Math.min(...usageData.map(d => d.messages));
+
+  const usageTrendPercent = data.usage_trends_increased_percentage;
+
+  const parentHeight = 256; // px, matches h-64
+  const minBarHeight = 12; // px
 
   return (
     <div className="space-y-8">
@@ -141,7 +209,10 @@ function Overview() {
           <div className="flex items-center space-x-2">
             <div className="flex items-center">
               <TrendingUp className="w-4 h-4 text-green-600 mr-1" />
-              <span className="text-sm text-green-600">+18.2% vs last month</span>
+              <span className="text-sm text-green-600">
+                {usageTrendPercent >= 0 ? '+' : ''}
+                {usageTrendPercent.toFixed(1)}% vs last month
+              </span>
             </div>
           </div>
         </div>
@@ -149,19 +220,29 @@ function Overview() {
         <div className="h-64 relative">
           <div className="absolute inset-0 flex items-end justify-between">
             {usageData.map((data, index) => {
-              const height = ((data.messages - minMessages) / (maxMessages - minMessages)) * 100;
+              let barHeight = 0;
+              if (maxMessages === minMessages) {
+                barHeight = parentHeight;
+              } else {
+                barHeight = ((data.messages - minMessages) / (maxMessages - minMessages)) * parentHeight;
+                if (barHeight < minBarHeight && data.messages > 0) {
+                  barHeight = minBarHeight;
+                }
+              }
+              const date = new Date(data.date);
               return (
                 <div
                   key={data.date}
                   className="flex-1 flex flex-col items-center group"
                 >
                   <div className="relative flex-1 w-full px-1">
-                    <AnimatedBar height={height} delay={index * 50} />
+                    <AnimatedBar height={barHeight} delay={index * 50} />
                   </div>
                   <span className="text-xs text-gray-500 mt-2 hidden sm:block">
-                    {new Date(data.date).toLocaleDateString(undefined, { 
+                    {date.toLocaleDateString(undefined, { 
                       month: 'short', 
-                      day: 'numeric' 
+                      day: 'numeric',
+                      year: 'numeric'
                     })}
                   </span>
                   <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-xs rounded px-2 py-1 pointer-events-none">
@@ -178,20 +259,20 @@ function Overview() {
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Top Performing Agents</h3>
           <div className="space-y-4">
-            {[
-              { name: 'HR Assistant', messages: 847, accuracy: 98 },
-              { name: 'Product Bot', messages: 634, accuracy: 95 },
-              { name: 'Sales Support', messages: 412, accuracy: 92 },
-            ].map((agent) => (
-              <div key={agent.name} className="flex items-center justify-between">
+            {data.top_agents.map((agent) => (
+              <div 
+                key={agent.agent_id} 
+                className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/edit`)}
+              >
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 rounded-full bg-[#4A154B] flex items-center justify-center text-white font-medium">
                     {agent.name.charAt(0)}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{agent.name}</p>
+                    <p className="text-sm font-medium text-gray-900">Agent {agent.name}</p>
                     <p className="text-xs text-gray-500">
-                      <AnimatedNumber value={agent.messages} /> messages
+                      <AnimatedNumber value={agent.message_count} /> messages
                     </p>
                   </div>
                 </div>
@@ -210,9 +291,9 @@ function Overview() {
           <h3 className="text-lg font-medium text-gray-900 mb-4">Response Quality</h3>
           <div className="space-y-4">
             {[
-              { label: 'Helpful', value: 92, color: 'bg-green-500' },
-              { label: 'Neutral', value: 6, color: 'bg-yellow-500' },
-              { label: 'Unhelpful', value: 2, color: 'bg-red-500' },
+              { label: 'Helpful', value: data.response_quality.helpful, color: 'bg-green-500' },
+              { label: 'Neutral', value: data.response_quality.neutral, color: 'bg-yellow-500' },
+              { label: 'Unhelpful', value: data.response_quality.unhelpful, color: 'bg-red-500' },
             ].map((item) => (
               <div key={item.label}>
                 <div className="flex items-center justify-between mb-1">
